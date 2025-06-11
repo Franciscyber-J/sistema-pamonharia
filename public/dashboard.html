@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Pamonharia</title>
+    <link rel="stylesheet" href="dashboard.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
+</head>
+<body>
+    
+    <div id="login-container">
+        <div class="login-box">
+            <h2>Login do Operador</h2>
+            <p>Acesse o painel de controle da pamonharia.</p>
+            <form id="form-login">
+                <div class="form-group">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-senha">Senha</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="login-senha" required>
+                        <button type="button" id="toggle-senha" title="Mostrar/ocultar senha">
+                            <svg id="eye-open" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 12.5c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                            <svg id="eye-closed" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" style="display: none;"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <button type="submit" class="save-btn" style="width: 100%;">Entrar</button>
+                <div id="login-error"></div>
+            </form>
+        </div>
+    </div>
+
+    <div id="dashboard-container" style="display: none;">
+        <div class="container">
+            <div class="dashboard-header">
+                <h1>Dashboard <span>Pamonharia</span></h1>
+                <button id="btn-logout" class="btn-sm">Sair</button>
+            </div>
+            <div class="tabs">
+                <button class="tab-button active" data-tab="Produtos">Produtos e Estoque</button>
+                <button class="tab-button" data-tab="Setores" data-admin-only>Gerenciar Setores</button>
+            </div>
+            <div id="Produtos" class="tab-content active">
+                <button class="save-btn" id="btn-add-produto-base" data-admin-only>+ Adicionar Novo Produto Base</button>
+                <div id="gerenciador-produtos" style="margin-top: 20px;"></div>
+            </div>
+            <div id="Setores" class="tab-content"></div>
+        </div>
+    </div>
+    
+    <div id="modal-produto-base" class="modal-backdrop">
+        <div class="modal">
+            <h2 id="form-pb-title">Produto Base</h2>
+            <form id="form-produto-base">
+                <input type="hidden" id="pb-id">
+                <label for="pb-nome">Nome do Produto:</label>
+                <input type="text" id="pb-nome" name="nome" required>
+                <input type="hidden" id="pb-slug" name="slug">
+                <label for="pb-descricao">Descrição:</label>
+                <textarea id="pb-descricao" name="descricao" rows="3"></textarea>
+                <label for="pb-setor">Setor:</label>
+                <select id="pb-setor" name="setor_id" required></select>
+                <label>Imagem (deixe em branco para não alterar):</label>
+                <input type="file" id="pb-imagem" name="imagem" accept="image/*">
+                <div class="form-buttons">
+                    <button type="submit" class="save-btn">Salvar</button>
+                    <button type="button" class="cancel-btn btn-modal-cancel">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="modal-variacao" class="modal-backdrop">
+        <div class="modal">
+            <h2 id="form-v-title">Variação</h2>
+            <form id="form-variacao">
+                <input type="hidden" id="v-id">
+                <input type="hidden" id="v-pb-id" name="produto_base_id">
+                <label for="v-nome">Nome da Variação:</label>
+                <input type="text" id="v-nome" name="nome" required>
+                <input type="hidden" id="v-slug" name="slug">
+                <label for="v-preco">Preço:</label>
+                <input type="number" step="0.01" id="v-preco" name="preco" required>
+                <div class="form-buttons">
+                    <button type="submit" class="save-btn">Salvar</button>
+                    <button type="button" class="cancel-btn btn-modal-cancel">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="toast-notification"></div>
+
+    <div id="global-actions-menu" class="actions-dropdown"></div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cardápio - Saborosa Pamonha do Goiás</title>
+    <style>
+        :root {
+            --cor-principal: #28a745; --cor-principal-hover: #218838; --cor-fundo: #161b22;
+            --cor-superficie: #21262d; --cor-borda: #30363d; --cor-texto-principal: #e6edf3;
+            --cor-texto-secundario: #8b949e; --cor-whatsapp: #128C7E; --cor-exclusao: #e74c3c; --cor-badge: #f85149;
+            --cor-aviso: #f39c12; 
+        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; margin: 0; background-color: var(--cor-fundo); color: var(--cor-texto-principal); }
+        .header { background-color: var(--cor-superficie); border-bottom: 1px solid var(--cor-borda); color: white; padding: 20px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header h1 { margin: 0; font-size: 2em; color: var(--cor-texto-principal); }
+        .header h1 span { color: var(--cor-principal); }
+        .header p { color: var(--cor-texto-secundario); margin-top: 5px; }
+        .container { display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 30px; max-width: 1800px; margin-left: auto; margin-right: auto; }
+        .menu { width: 100%; max-width: 1200px; }
+        .product-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+        .product-card { background: var(--cor-superficie); border: 1px solid var(--cor-borda); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; transition: filter 0.3s ease, opacity 0.3s ease; }
+        .product-card img { width: 100%; height: 180px; object-fit: cover; }
+        .product-card-content { padding: 15px; display: flex; flex-direction: column; flex-grow: 1; }
+        .product-card h3 { margin-top: 0; color: var(--cor-texto-principal); }
+        .product-card p { color: var(--cor-texto-secundario); font-size: 0.9em; flex-grow: 1; min-height: 60px; }
+        .add-button { background-color: var(--cor-principal); color: white; border: none; padding: 12px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: auto; width: 100%; transition: background-color 0.2s; font-size: 16px; }
+        .add-button:hover { background-color: var(--cor-principal-hover); }
+        .add-button:disabled { background-color: #555; color: var(--cor-texto-secundario); cursor: not-allowed; }
+        .produto-esgotado { filter: grayscale(1); opacity: 0.7; }
+        .cart-checkout-container { width: 100%; max-width: 600px; background: var(--cor-superficie); border: 1px solid var(--cor-borda); border-radius: 8px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .cart-checkout-container h2, .cart-checkout-container h3 { margin-top: 0; color: var(--cor-texto-principal); border-bottom: 1px solid var(--cor-borda); padding-bottom: 10px; }
+        
+        #cart-items {
+            padding: 0;
+            max-height: 350px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        #cart-items li.cart-item:last-child {
+            border-bottom: none;
+            padding-bottom: 0; 
+        }
+        
+        /* CORREÇÃO 1 (CSS): O seletor foi alterado de '#cart-items li:first-child' para '.cart-empty-message'.
+           Isso garante que este estilo SÓ se aplique à mensagem de carrinho vazio. */
+        .cart-empty-message { 
+            color: var(--cor-texto-secundario); 
+            list-style: none; 
+            text-align: center; 
+            padding: 20px; 
+        }
+
+        .cart-item {
+            list-style: none;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--cor-borda);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: nowrap;
+        }
+        
+        .cart-item-info { flex-grow: 1; min-width: 0; }
+        .cart-item-info span { display: block; }
+        .cart-item-info .item-name { font-weight: bold; color: var(--cor-texto-principal); }
+        .cart-item-info .item-details { font-size: 0.85em; color: var(--cor-texto-secundario); padding-left: 10px; }
+        .cart-item-info .item-price { font-size: 0.9em; color: var(--cor-texto-secundario); }
+        .cart-item-controls { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+        .quantity-btn, .remove-btn { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--cor-borda); background: #30363d; color: var(--cor-texto-principal); font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s; }
+        .remove-btn { background-color: var(--cor-exclusao); color: white; border-color: var(--cor-exclusao); font-weight: bold; }
+        .checkout-section { margin-top: 20px; }
+        .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .options-grid .option-full { grid-column: 1 / -1; }
+        .options-grid label { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border: 1px solid var(--cor-borda); border-radius: 5px; cursor: pointer; transition: all 0.2s; background-color: #30363d; min-height: 50px; }
+        .options-grid input[type="radio"]:checked + label { background-color: var(--cor-principal); color: white; border-color: var(--cor-principal); }
+        .options-grid input[type="radio"] { display: none; }
+        #payment-options label { flex-direction: row; justify-content: space-between; }
+        #payment-options .payment-option-half label { justify-content: center; }
+        .payment-label-content { display: flex; align-items: center; gap: 5px; }
+        .card-flags { display: flex; gap: 8px; align-items: center; }
+        .card-flags img { height: 20px; width: auto; }
+        .summary { margin-top: 20px; padding-top: 15px; border-top: 2px solid var(--cor-borda); }
+        .summary div { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 1.1em; }
+        #grand-total { font-size: 1.4em; font-weight: bold; color: var(--cor-texto-principal); }
+        .finalize-button { background-color: var(--cor-whatsapp); color: white; border: none; padding: 15px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 20px; width: 100%; font-size: 1.2em; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 10px; }
+        .finalize-button.disabled { background-color: #95a5a6; cursor: not-allowed; }
+        #delivery-details { display: none; margin-top: 15px; }
+        #delivery-details label { margin-bottom: 8px; font-weight: 600; color: var(--cor-texto-secundario); }
+        #delivery-details input, #delivery-details textarea { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 6px; border: 1px solid var(--cor-borda); background-color: var(--cor-fundo); color: var(--cor-texto-principal); font-size: 16px; }
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 1000; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .modal { background: var(--cor-superficie); padding: 25px; border-radius: 10px; width: 90%; max-width: 500px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); border: 1px solid var(--cor-borda); display: flex; flex-direction: column; max-height: 90vh; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--cor-borda); padding-bottom: 15px; margin-bottom: 15px; }
+        .modal-close-btn { font-size: 2rem; background: none; border: none; cursor: pointer; color: #888; }
+        .modal-body { overflow-y: auto; }
+        .variation-item { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 12px 5px; border-bottom: 1px solid var(--cor-borda); }
+        .variation-item.esgotado { filter: grayscale(1); opacity: 0.5; }
+        .variation-item-info { flex-grow: 1; }
+        .variation-item-info span { font-size: 1.1em; }
+        .quantity-selector { display: flex; align-items: center; gap: 12px; }
+        .quantity-value { font-size: 1.2em; font-weight: bold; min-width: 20px; text-align: center; }
+        .modal-footer { margin-top: 20px; }
+        .modal-footer button { width: 100%; padding: 15px; font-size: 1.1em; }
+        #combo-status { text-align: center; font-size: 1.2em; font-weight: bold; margin-bottom: 15px; color: var(--cor-principal); }
+        .combo-item { display: flex; flex-wrap: wrap; align-items: center; padding: 10px 5px; border-bottom: 1px solid var(--cor-borda); }
+        .combo-item.esgotado { filter: grayscale(1); opacity: 0.5; }
+        .combo-item:last-child { border-bottom: none; }
+        .combo-item-info { flex-grow: 1; }
+        .combo-item-info .item-name { font-weight: 500; }
+        .combo-item-info .item-upcharge { font-size: 0.8em; color: var(--cor-badge); font-weight: bold; }
+        .floating-cart-btn { position: fixed; bottom: 20px; right: 20px; width: 60px; height: 60px; background-color: var(--cor-principal); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 999; text-decoration: none; transition: transform 0.3s ease, opacity 0.3s ease; transform: scale(0); opacity: 0; }
+        .floating-cart-btn.visible { transform: scale(1); opacity: 1; }
+        .cart-icon { width: 32px; height: 32px; fill: white; }
+        .cart-item-count { position: absolute; top: -5px; right: -5px; background-color: var(--cor-badge); color: white; border-radius: 50%; width: 24px; height: 24px; font-size: 14px; font-weight: bold; display: flex; align-items: center; justify-content: center; border: 2px solid var(--cor-superficie); }
+        .stock-limit-msg { color: var(--cor-aviso); font-size: 0.8em; font-weight: 500; width: 100%; text-align: left; padding-left: 5px; opacity: 0; max-height: 0; transition: opacity 0.3s ease, max-height 0.3s ease; }
+        .stock-limit-msg.visible { opacity: 1; max-height: 20px; margin-top: 4px; }
+        @media (min-width: 992px) { .container { flex-direction: row; align-items: flex-start; gap: 40px; } .menu { flex: 2; } .cart-checkout-container { flex: 1; position: sticky; top: 20px; max-width: 450px; } }
+    </style>
+</head>
+<body>
+    <header class="header"><h1>Saborosa Pamonha do <span>Goiás</span></h1><p>Escolha seus itens e confirme o pedido no WhatsApp!</p></header>
+    <main class="container">
+        <section class="menu"><h2>Nosso Cardápio</h2><div class="product-list" id="product-list"></div></section>
+        <section class="cart-checkout-container" id="carrinho-secao"><h2>Seu Pedido</h2><ul id="cart-items"><li>Seu carrinho está vazio.</li></ul>
+        <div class="checkout-section">
+            <h3>Como deseja receber?</h3>
+            <div class="options-grid" id="delivery-options">
+                <div class="option-full"><input type="radio" id="entrega" name="tipo-recebimento" value="Entrega" onchange="atualizarDisplayCarrinho()"><label for="entrega">🛵 Entrega</label></div>
+                <div class="option-full"><input type="radio" id="retirada" name="tipo-recebimento" value="Retirada" onchange="atualizarDisplayCarrinho()" checked><label for="retirada">🚶 Retirada</label></div>
+            </div>
+            <div id="delivery-details"><label for="nome-recebedor">Nome de quem irá receber:</label><input type="text" id="nome-recebedor" placeholder="Ex: João da Silva"><label for="endereco-entrega">Endereço completo (Rua, Nº, Bairro, Referência):</label><textarea id="endereco-entrega" rows="3" placeholder="Ex: Rua das Flores, 123, Bairro Centro, em frente à praça."></textarea></div>
+        </div>
+        <div class="checkout-section">
+            <h3>Forma de Pagamento</h3>
+            <div class="options-grid" id="payment-options">
+                <div class="option-full"><input type="radio" id="cartao" name="forma-pagamento" value="Cartão"><label for="cartao"><span class="payment-label-content">💳 Cartão (Crédito/Débito)</span><div class="card-flags"><img src="/images/visa.png" alt="Visa"><img src="/images/mastercard.png" alt="Mastercard"><img src="/images/elo.png" alt="Elo"><img src="/images/amex.png" alt="American Express"><img src="/images/hipercard.png" alt="Hipercard"></div></label></div>
+                <div><input type="radio" id="dinheiro" name="forma-pagamento" value="Dinheiro" checked><label for="dinheiro"><span class="payment-label-content">💵 Dinheiro</span></label></div>
+                <div><input type="radio" id="pix" name="forma-pagamento" value="PIX"><label for="pix"><span class="payment-label-content">💲 PIX</span></label></div>
+            </div>
+        </div>
+        <div class="summary"><div id="subtotal"><span>Subtotal</span><strong>R$ 0,00</strong></div><div id="delivery-fee" style="display: none;"><span>Taxa de Entrega</span><strong>R$ 0,00</strong></div><div id="grand-total"><span>Total</span><strong>R$ 0,00</strong></div></div><a href="#" id="finalize-button" class="finalize-button disabled" onclick="finalizarPedidoWhatsApp(event)"><svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" fill="white"><path d="M0 0h24v24H0z" fill="none"/><path d="M.01 21L23 12 .01 3 0 10l15 2-15 2z"/></svg>Finalizar Pedido</a></section>
+    </main>
+    <div class="modal-backdrop" id="variations-modal"><div class="modal"><div class="modal-header"><h2 id="modal-product-name"></h2><button class="modal-close-btn" onclick="fecharModal()">×</button></div><div class="modal-body" id="modal-variations-list"></div><div class="modal-footer"><button class="add-button" onclick="adicionarVariacoesAoCarrinho()">Adicionar ao Pedido</button></div></div></div>
+    <div class="modal-backdrop" id="combo-builder-modal"><div class="modal"><div class="modal-header"><h2 id="combo-modal-product-name"></h2><button class="modal-close-btn" onclick="fecharModal()">×</button></div><div id="combo-status"></div><div class="modal-body" id="combo-modal-items-list"></div><div class="modal-footer"><button id="add-combo-button" class="add-button" onclick="adicionarComboAoCarrinho()">Adicionar Combo ao Pedido</button></div></div></div>
+    <a href="#carrinho-secao" id="floating-cart-btn" class="floating-cart-btn"><svg class="cart-icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2zM7.17 14.75l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.37-.66-.11-1.48-.87-1.48H5.21l-.94-2H1v2h2l3.6 7.59-1.35 2.44C4.52 15.37 5.24 17 7 17h12v-2H7z"/></svg><span id="cart-item-count" class="cart-item-count">0</span></a>
+
+<script>
+    const backendUrl = 'http://localhost:3000';
+    const numeroWhatsApp = '5562000000000';
+    const TAXA_ENTREGA = 14.00;
+    const ENDERECO_PAMONHARIA = 'Rua Tulipas, Quadra 01, Lote 06, C-02, Jardim Mondale';
+    const LINK_LOCALIZACAO = 'https://maps.app.goo.gl/eseCGMFiB857R4BP9';
+    let carrinho = [];
+    let cardapioCache = [];
+    let selecaoModal = { produtoBaseId: null, variacoes: {} };
+    let selecaoComboModal = { produtoBase: null, itens: {}, totalItens: 0, precoBase: 0, upcharge: 0 };
+    const floatingCartBtn = document.getElementById('floating-cart-btn');
+    const cartItemCount = document.getElementById('cart-item-count');
+    const definicoesCombos = { 'Combo 10 Pamonhas': { totalObrigatorio: 10, precoBase: 119.90, setorIdAlvo: 1, regrasEspeciais: { 'Pamonha à Moda': { upcharge: 2.00 } } }, 'Combo 10 Bolinhos': { totalObrigatorio: 10, precoBase: 35.99, setorIdAlvo: 2, regrasEspeciais: {} } };
+    let cartTimeoutTimer = null;
+    const TIMEOUT_DURATION = 3 * 60 * 1000;
+    function clearCartAndNotify() { carrinho = []; atualizarDisplayCarrinho(); alert("Seu carrinho expirou por inatividade e foi esvaziado."); }
+    function resetCartTimeout() { clearTimeout(cartTimeoutTimer); if (carrinho.length > 0) { cartTimeoutTimer = setTimeout(clearCartAndNotify, TIMEOUT_DURATION); } }
+    function getEstoqueDisponivel(slug) { const todosOsItens = cardapioCache.flatMap(p => p.variacoes); const itemOriginal = todosOsItens.find(i => i.slug === slug); if (!itemOriginal) return 0; const quantidadeNoCarrinho = carrinho.filter(item => !item.isCombo).filter(item => item.slug === slug).reduce((acc, item) => acc + item.quantidade, 0) + carrinho.filter(item => item.isCombo).flatMap(c => c.subItens).filter(subItem => subItem.slug === slug).reduce((acc, subItem) => acc + subItem.quantidade, 0); return itemOriginal.quantidade_estoque - quantidadeNoCarrinho; }
+    async function carregarCardapio() { try { const response = await fetch(`${backendUrl}/cardapio`); const { data } = await response.json(); cardapioCache = data; renderizarMenuCompleto(); } catch(error) { console.error("Erro ao carregar cardápio:", error); document.getElementById('product-list').innerHTML = '<p>Não foi possível carregar o cardápio. Tente novamente mais tarde.</p>'; } }
+    function renderizarMenuCompleto() { const productList = document.getElementById('product-list'); productList.innerHTML = ''; if (cardapioCache.length === 0) { productList.innerHTML = '<p>Nenhum produto disponível no momento. Volte mais tarde!</p>'; return; } cardapioCache.forEach(produto => { let definicao = null; let isCombo = false; for (const nomeBaseCombo in definicoesCombos) { if (produto.nome.includes(nomeBaseCombo)) { definicao = definicoesCombos[nomeBaseCombo]; isCombo = true; break; } } let isEsgotado = false; let buttonText = "Escolher Opções"; if (isCombo) { const itensElegiveis = cardapioCache.filter(p => p.setor_id === definicao.setorIdAlvo); const estoqueDisponivelCombo = itensElegiveis.flatMap(p => p.variacoes).reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0); if (estoqueDisponivelCombo < definicao.totalObrigatorio) { isEsgotado = true; buttonText = "Combo Indisponível"; } } else { const totalEstoqueProduto = (produto.variacoes || []).reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0); if (totalEstoqueProduto === 0) { isEsgotado = true; buttonText = "Esgotado"; } } const productCard = document.createElement('div'); productCard.className = `product-card ${isEsgotado ? 'produto-esgotado' : ''}`; const onclickAction = isCombo ? `abrirModalCombo(${produto.id})` : `abrirModalVariacoes(${produto.id})`; productCard.innerHTML = `<img src="${backendUrl}${produto.imagem_url}" alt="${produto.nome}"><div class="product-card-content"><div><h3>${produto.nome}</h3><p>${produto.descricao || ''}</p></div><button class="add-button" onclick="${onclickAction}" ${isEsgotado ? 'disabled' : ''}>${buttonText}</button></div>`; productList.appendChild(productCard); }); }
+    function fecharModal() { document.getElementById('variations-modal').style.display = 'none'; document.getElementById('combo-builder-modal').style.display = 'none'; }
+    function abrirModalVariacoes(produtoBaseId) { const produto = cardapioCache.find(p => p.id === produtoBaseId); if (!produto) return; selecaoModal = { produtoBaseId: produto.id, variacoes: {} }; document.getElementById('modal-product-name').innerText = produto.nome; const variationsList = document.getElementById('modal-variations-list'); variationsList.innerHTML = ''; produto.variacoes.forEach(v => { const estoqueDisponivel = getEstoqueDisponivel(v.slug); const isEsgotado = estoqueDisponivel === 0; variationsList.innerHTML += `<div class="variation-item ${isEsgotado ? 'esgotado' : ''}"><div class="variation-item-info"><span>${v.nome} (R$ ${v.preco.toFixed(2).replace('.',',')})</span><div class="stock-limit-msg" id="msg-v-${v.slug}">Limite em estoque atingido</div></div><div class="quantity-selector"><button class="quantity-btn" onclick="mudarQuantidadeModal('${v.slug}', -1)">-</button><span class="quantity-value" id="qty-v-${v.slug}">0</span><button class="quantity-btn" onclick="mudarQuantidadeModal('${v.slug}', 1)" ${isEsgotado ? 'disabled' : ''}>+</button></div></div>`; selecaoModal.variacoes[v.slug] = { ...v, quantidade: 0 }; }); document.getElementById('variations-modal').style.display = 'flex'; }
+    function mudarQuantidadeModal(slug, delta) { const variacao = selecaoModal.variacoes[slug]; if (!variacao) return; const estoqueDisponivel = getEstoqueDisponivel(slug); if (delta > 0 && variacao.quantidade >= estoqueDisponivel) { const msgEl = document.getElementById(`msg-v-${slug}`); if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); } return; } if (variacao.quantidade + delta >= 0) { variacao.quantidade += delta; document.getElementById(`qty-v-${slug}`).innerText = variacao.quantidade; } }
+    function adicionarVariacoesAoCarrinho() { const produtoBase = cardapioCache.find(p => p.id === selecaoModal.produtoBaseId); for(const slug in selecaoModal.variacoes){ const variacao = selecaoModal.variacoes[slug]; if(variacao.quantidade > 0){ const itemNoCarrinho = carrinho.find(item => item.slug === slug); if(itemNoCarrinho){ itemNoCarrinho.quantidade += variacao.quantidade; } else { carrinho.push({ slug: variacao.slug, nome: `${produtoBase.nome} (${variacao.nome})`, preco: variacao.preco, quantidade: variacao.quantidade, isCombo: false }); } } } atualizarDisplayCarrinho(); fecharModal(); }
+    function abrirModalCombo(produtoBaseId) { const produto = cardapioCache.find(p => p.id === produtoBaseId); let definicao = null; for (const nomeBaseCombo in definicoesCombos) { if (produto.nome.includes(nomeBaseCombo)) { definicao = definicoesCombos[nomeBaseCombo]; break; } } if (!produto || !definicao) return; selecaoComboModal = { produtoBase: produto, definicao: definicao, itens: {}, totalSelecionado: 0, upcharge: 0 }; document.getElementById('combo-modal-product-name').innerText = produto.nome; const itemsList = document.getElementById('combo-modal-items-list'); itemsList.innerHTML = ''; const itensElegiveis = cardapioCache.filter(p => p.setor_id === definicao.setorIdAlvo).flatMap(p => p.variacoes.map(v => ({...v, nomeBase: p.nome, nomeCompleto: `${p.nome} (${v.nome})`}))); itensElegiveis.forEach(item => { const regraEspecial = definicao.regrasEspeciais[item.nomeBase] || {}; const upcharge = regraEspecial.upcharge || 0; const estoqueDisponivel = getEstoqueDisponivel(item.slug); selecaoComboModal.itens[item.slug] = { ...item, quantidade: 0, upcharge: upcharge, estoqueDisponivel: estoqueDisponivel }; const upchargeText = upcharge > 0 ? `<div class="item-upcharge">+ R$ ${upcharge.toFixed(2).replace('.',',')}</div>` : ''; const isEsgotado = estoqueDisponivel === 0; itemsList.innerHTML += `<div class="combo-item ${isEsgotado ? 'esgotado' : ''}"><div class="combo-item-info"><div class="item-name">${item.nomeCompleto}</div>${upchargeText}<div class="stock-limit-msg" id="msg-c-${item.slug}">Limite em estoque atingido</div></div><div class="quantity-selector"><button class="quantity-btn" onclick="mudarQuantidadeCombo('${item.slug}', -1)">-</button><span class="quantity-value" id="combo-qty-${item.slug}">0</span><button class="quantity-btn" onclick="mudarQuantidadeCombo('${item.slug}', 1)" ${isEsgotado ? 'disabled' : ''}>+</button></div></div>`; }); atualizarStatusModalCombo(); document.getElementById('combo-builder-modal').style.display = 'flex'; }
+    function mudarQuantidadeCombo(slug, delta) { const item = selecaoComboModal.itens[slug]; const novoTotal = selecaoComboModal.totalSelecionado + delta; if (delta > 0 && item.quantidade >= item.estoqueDisponivel) { const msgEl = document.getElementById(`msg-c-${slug}`); if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); } return; } if (item.quantidade + delta >= 0 && novoTotal <= selecaoComboModal.definicao.totalObrigatorio) { item.quantidade += delta; document.getElementById(`combo-qty-${slug}`).innerText = item.quantidade; atualizarStatusModalCombo(); } }
+    function atualizarStatusModalCombo() { let totalSelecionado = 0; let upcharge = 0; for(const slug in selecaoComboModal.itens) { const item = selecaoComboModal.itens[slug]; totalSelecionado += item.quantidade; if(item.upcharge > 0) { upcharge += item.quantidade * item.upcharge; } } selecaoComboModal.totalSelecionado = totalSelecionado; selecaoComboModal.upcharge = upcharge; const totalObrigatorio = selecaoComboModal.definicao.totalObrigatorio; const statusEl = document.getElementById('combo-status'); statusEl.innerText = `Selecione ${totalObrigatorio} itens (${totalSelecionado} / ${totalObrigatorio})`; const addButton = document.getElementById('add-combo-button'); if(totalSelecionado === totalObrigatorio) { addButton.disabled = false; statusEl.style.color = 'var(--cor-sucesso)'; } else { addButton.disabled = true; statusEl.style.color = 'var(--cor-principal)'; } }
+    function adicionarComboAoCarrinho() { const { produtoBase, itens, definicao, upcharge } = selecaoComboModal; const precoFinal = definicao.precoBase + upcharge; let detalhes = []; let subItens = []; for(const slug in itens) { if (itens[slug].quantidade > 0) { detalhes.push(`${itens[slug].quantidade}x ${itens[slug].nome}`); subItens.push({ slug: slug, quantidade: itens[slug].quantidade }); } } carrinho.push({ slug: `combo-${produtoBase.id}-${Date.now()}`, nome: produtoBase.nome, preco: precoFinal, quantidade: 1, detalhes: detalhes.join(', '), isCombo: true, subItens: subItens }); atualizarDisplayCarrinho(); fecharModal(); }
+    function atualizarDisplayCarrinho() {
+        const cartItems = document.getElementById('cart-items');
+        const subtotalEl = document.getElementById('subtotal').querySelector('strong');
+        const deliveryFeeEl = document.getElementById('delivery-fee');
+        const deliveryFeeValueEl = deliveryFeeEl.querySelector('strong');
+        const grandTotalEl = document.getElementById('grand-total').querySelector('strong');
+        const finalizeButton = document.getElementById('finalize-button');
+        const deliveryDetailsEl = document.getElementById('delivery-details');
+        cartItems.innerHTML = '';
+        let subtotal = 0;
+        let totalItens = 0;
+        if (carrinho.length === 0) {
+            /* CORREÇÃO 2 (JavaScript): Adicionada a classe 'cart-empty-message' ao 'li' para que o CSS
+               possa selecioná-lo de forma única, sem afetar os itens reais do carrinho. */
+            cartItems.innerHTML = '<li class="cart-empty-message">Seu carrinho está vazio.</li>';
+            finalizeButton.classList.add('disabled');
+            floatingCartBtn.classList.remove('visible');
+            clearTimeout(cartTimeoutTimer);
+        } else {
+            finalizeButton.classList.remove('disabled');
+            floatingCartBtn.classList.add('visible');
+            resetCartTimeout();
+            carrinho.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'cart-item';
+                const detalhesHtml = item.detalhes ? `<div class="item-details">${item.detalhes}</div>` : '';
+                const qtdeControlsHtml = item.isCombo ? '' : `<button class="quantity-btn" onclick="mudarQuantidadeCarrinho('${item.slug}', -1)">-</button><span class="quantity-value">${item.quantidade}</span><button class="quantity-btn" onclick="mudarQuantidadeCarrinho('${item.slug}', 1)">+</button>`;
+                li.innerHTML = `<div class="cart-item-info"><span class="item-name">${item.quantidade}x ${item.nome}</span>${detalhesHtml}<span class="item-price">R$ ${item.preco.toFixed(2).replace('.', ',')}</span></div><div class="cart-item-controls">${qtdeControlsHtml}<button class="remove-btn" onclick="removerItemDoCarrinho('${item.slug}')">×</button></div>`;
+                cartItems.appendChild(li);
+                subtotal += item.preco * item.quantidade;
+                totalItens += item.quantidade;
+            });
+        }
+        cartItemCount.innerText = totalItens;
+        const tipoRecebimento = document.querySelector('input[name="tipo-recebimento"]:checked').value;
+        let totalFinal = subtotal;
+        if (tipoRecebimento === 'Entrega') {
+            deliveryDetailsEl.style.display = 'block';
+            if (subtotal > 0) {
+                deliveryFeeEl.style.display = 'flex';
+                deliveryFeeValueEl.innerText = `R$ ${TAXA_ENTREGA.toFixed(2).replace('.', ',')}`;
+                totalFinal += TAXA_ENTREGA;
+            } else {
+                deliveryFeeEl.style.display = 'none';
+            }
+        } else {
+            deliveryDetailsEl.style.display = 'none';
+            deliveryFeeEl.style.display = 'none';
+        }
+        subtotalEl.innerText = `R$ ${subtotal.toFixed(2).replace('.', ',')}`;
+        grandTotalEl.innerText = `R$ ${totalFinal.toFixed(2).replace('.', ',')}`;
+        renderizarMenuCompleto();
+    }
+    function mudarQuantidadeCarrinho(slug, delta) { const itemNoCarrinho = carrinho.find(item => item.slug === slug); if (!itemNoCarrinho) return; const estoqueDisponivel = getEstoqueDisponivel(slug) + itemNoCarrinho.quantidade; if (delta > 0 && itemNoCarrinho.quantidade >= estoqueDisponivel) { alert("Não há mais estoque disponível para este item."); return; } itemNoCarrinho.quantidade += delta; if (itemNoCarrinho.quantidade <= 0) { removerItemDoCarrinho(slug); } else { atualizarDisplayCarrinho(); } }
+    function removerItemDoCarrinho(slug) { carrinho = carrinho.filter(item => item.slug !== slug); atualizarDisplayCarrinho(); }
+    function finalizarPedidoWhatsApp(event) { event.preventDefault(); if (carrinho.length === 0) { alert('Seu carrinho está vazio!'); return; } const tipoRecebimento = document.querySelector('input[name="tipo-recebimento"]:checked').value; const nomeRecebedor = document.getElementById('nome-recebedor').value.trim(); const endereco = document.getElementById('endereco-entrega').value.trim(); if (tipoRecebimento === 'Entrega' && (!nomeRecebedor || !endereco)) { alert('Por favor, preencha o nome de quem irá receber e o endereço completo para a entrega.'); return; } let subtotal = 0; let mensagem = 'Olá! Gostaria de fazer o seguinte pedido do cardápio online:\n\n'; mensagem += '🍽️ *ITENS DO PEDIDO*\n'; carrinho.forEach(item => { mensagem += `${item.quantidade}x ${item.nome}`; if (item.detalhes) { mensagem += `\n   ↳ _(${item.detalhes})_`; } mensagem += '\n'; subtotal += item.preco * item.quantidade; }); mensagem += '\n'; const formaPagamento = document.querySelector('input[name="forma-pagamento"]:checked').value; if (tipoRecebimento === 'Entrega') { mensagem += `👤 *NOME PARA ENTREGA*\n${nomeRecebedor}\n\n🏠 *ENDEREÇO*\n${endereco}\n\n`; } else { mensagem += `🚶 *RETIRADA NO LOCAL*\n\nNosso endereço é:\n${ENDERECO_PAMONHARIA}\n\n📍 *Ver no mapa:*\n${LINK_LOCALIZACAO}\n\n`; } mensagem += `💳 *PAGAMENTO*\n${formaPagamento}\n\n`; let totalFinal = subtotal; if (tipoRecebimento === 'Entrega') { totalFinal += TAXA_ENTREGA; mensagem += `Subtotal: R$ ${subtotal.toFixed(2).replace('.', ',')}\nTaxa de Entrega: R$ ${TAXA_ENTREGA.toFixed(2).replace('.', ',')}\n`; } mensagem += `*TOTAL: R$ ${totalFinal.toFixed(2).replace('.', ',')}*`; if (tipoRecebimento === 'Entrega') { mensagem += `\n\n_Se possível, por favor, envie sua localização pelo mapa do WhatsApp para facilitar a entrega. 👇_`; } const link = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensagem)}`; window.open(link, '_blank'); }
+    
+    window.onload = carregarCardapio;
+</script>
+</body>
+</html>
