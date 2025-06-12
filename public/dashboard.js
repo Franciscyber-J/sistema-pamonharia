@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- ELEMENTOS E VARIÁVEIS GLOBAIS ---
-    const backendUrl = 'https://pamonharia-servidor.onrender.com';
+    const backendUrl = 'https://pamonhariasaborosa.expertbr.com'; // ATUALIZADO PARA O DOMÍNIO FINAL
     let cache = { produtos: [], setores: [], combos: [] };
     let sortable = null;
     let regrasTemporarias = [];
@@ -18,13 +18,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- FUNÇÃO DE INICIALIZAÇÃO PRINCIPAL ---
     function init() {
-        verificarSessao();
         setupEventListeners();
+        verificarSessao();
     }
 
     // --- SETUP DE EVENTOS ---
     function setupEventListeners() {
-        // Função auxiliar para adicionar listeners de forma segura
         const safeAddEventListener = (selector, event, handler) => {
             const element = document.querySelector(selector);
             if (element) {
@@ -80,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
             mostrarToast('Carregando dados...', 'info');
             const [setoresRes, produtosRes, combosRes] = await Promise.all([
                 fetchProtegido(`${backendUrl}/setores`),
-                fetchProtegido(`${backendUrl}/dashboard/produtos`),
+                fetchProtegido(`${backendUrl}/api/dashboard/produtos`),
                 fetchProtegido(`${backendUrl}/api/dashboard/combos`)
             ]);
             if(!setoresRes.ok || !produtosRes.ok || !combosRes.ok) throw new Error("Falha ao carregar dados do servidor.");
@@ -115,8 +114,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const data = await response.json();
             if (!response.ok) { throw new Error(data.error || 'Erro ao fazer login.'); }
+            
             localStorage.setItem('authToken', data.token);
             localStorage.setItem('usuario', JSON.stringify(data.usuario));
+            
+            // ATUALIZA A URL SEM RECARREGAR A PÁGINA
+            history.pushState(null, '', '/dashboard');
+            
             mostrarDashboard();
             await carregarTudo();
         } catch (error) {
@@ -127,6 +131,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleLogout() {
         localStorage.removeItem('authToken');
         localStorage.removeItem('usuario');
+        
+        // ATUALIZA A URL PARA A RAIZ APÓS O LOGOUT
+        history.pushState(null, '', '/');
+        
         mostrarLogin();
     }
     
@@ -138,6 +146,26 @@ document.addEventListener('DOMContentLoaded', () => {
     function mostrarLogin() {
         loginContainer.style.display = 'flex';
         dashboardContainer.style.display = 'none';
+    }
+
+    function verificarSessao() {
+        const token = localStorage.getItem('authToken');
+        const caminho = window.location.pathname;
+
+        if (token) {
+            // Se tem token e não está na URL /dashboard, força a URL correta
+            if (caminho !== '/dashboard') {
+                history.replaceState(null, '', '/dashboard');
+            }
+            mostrarDashboard();
+            carregarTudo(); // Adicionado para carregar os dados ao recarregar a página
+        } else {
+            // Se não tem token e não está na raiz, força a URL de login
+            if (caminho !== '/') {
+                history.replaceState(null, '', '/');
+            }
+            mostrarLogin();
+        }
     }
 
     function aplicarPermissoes() {
@@ -364,7 +392,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const id = document.getElementById('pb-id').value;
         const formData = new FormData(e.target);
         const method = id ? 'PUT' : 'POST'; 
-        const url = id ? `${backendUrl}/produtos_base/${id}` : `${backendUrl}/produtos_base`; 
+        const url = id ? `${backendUrl}/api/dashboard/produtos/${id}` : `${backendUrl}/api/dashboard/produtos`; 
         try { 
             const response = await fetchProtegido(url, { method, body: formData }); 
             if (!response.ok) throw new Error((await response.json()).error); 
@@ -384,7 +412,7 @@ document.addEventListener('DOMContentLoaded', () => {
             slug: gerarSlug(document.getElementById('v-nome').value) 
         };
         const method = id ? 'PUT' : 'POST'; 
-        const url = id ? `${backendUrl}/variacoes/${id}` : `${backendUrl}/variacoes`; 
+        const url = id ? `${backendUrl}/api/dashboard/variacoes/${id}` : `${backendUrl}/api/dashboard/variacoes`; 
         try { 
             const response = await fetchProtegido(url, { method, body: JSON.stringify(data) }); 
             if (!response.ok) throw new Error((await response.json()).error); 
@@ -400,7 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const nome = document.getElementById('nome-setor').value;
         if (!nome) return;
         const method = id ? 'PUT' : 'POST';
-        const url = id ? `${backendUrl}/setores/${id}` : `${backendUrl}/setores`;
+        const url = id ? `${backendUrl}/api/dashboard/setores/${id}` : `${backendUrl}/api/dashboard/setores`;
         try {
             await fetchProtegido(url, { method, body: JSON.stringify({ nome }) });
             document.getElementById('form-setor').reset();
@@ -511,7 +539,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('nome-setor').focus();
         } else if (action === 'excluir-setor') {
              if (!confirm(`Tem certeza que deseja excluir o setor "${nome}"?`)) return;
-             fetchProtegido(`${backendUrl}/setores/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
+             fetchProtegido(`${backendUrl}/api/dashboard/setores/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
         }
     }
 
@@ -521,16 +549,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const { action, id, pbId, nome } = button.dataset;
         const actions = {
             'editar-produto_base': () => abrirModalProdutoBase(parseInt(id)),
-            'duplicar-produto_base': () => fetchProtegido(`${backendUrl}/produtos_base/${id}/duplicar`, { method: 'POST' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro')),
+            'duplicar-produto_base': () => fetchProtegido(`${backendUrl}/api/dashboard/produtos/${id}/duplicar`, { method: 'POST' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro')),
             'excluir-produto_base': () => {
                 if(confirm(`Excluir "${nome}" e todas as suas variações?`)) 
-                fetchProtegido(`${backendUrl}/produtos_base/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
+                fetchProtegido(`${backendUrl}/api/dashboard/produtos/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
             },
             'editar-variacao': () => abrirModalVariacao(parseInt(id), parseInt(pbId)),
-            'duplicar-variacao': () => fetchProtegido(`${backendUrl}/variacoes/${id}/duplicar`, { method: 'POST' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro')),
+            'duplicar-variacao': () => fetchProtegido(`${backendUrl}/api/dashboard/variacoes/${id}/duplicar`, { method: 'POST' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro')),
             'excluir-variacao': () => {
                 if(confirm(`Excluir a variação "${nome}"?`))
-                fetchProtegido(`${backendUrl}/variacoes/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
+                fetchProtegido(`${backendUrl}/api/dashboard/variacoes/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
             },
             'editar-combo': () => abrirModalCombo(parseInt(id)),
             'excluir-combo': () => {
@@ -612,7 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
             onEnd: async (evt) => {
                 const newOrder = [...container.children].map(card => card.dataset.produtoBaseId);
                 try {
-                    await fetchProtegido(`${backendUrl}/dashboard/produtos/reordenar`, { method: 'POST', body: JSON.stringify({ order: newOrder }) });
+                    await fetchProtegido(`${backendUrl}/api/dashboard/produtos/reordenar`, { method: 'POST', body: JSON.stringify({ order: newOrder }) });
                     mostrarToast('Ordem salva!', 'sucesso');
                 } catch (error) { mostrarToast('Erro ao salvar ordem.', 'erro'); carregarTudo(); }
             }
@@ -644,15 +672,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function fecharMenuAcoes() {
         if (globalActionsMenu) globalActionsMenu.style.display = 'none';
-    }
-
-    function verificarSessao() {
-        const token = localStorage.getItem('authToken');
-        if (token) {
-            mostrarDashboard();
-        } else {
-            mostrarLogin();
-        }
     }
 
     // --- INICIALIZAÇÃO ---

@@ -35,13 +35,24 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 // =================================================================================================
-// --- MIDDLEWARES E ROTAS BÁSICAS ---
+// --- MIDDLEWARES E ROTAS DE PÁGINAS (ATUALIZADO) ---
 // =================================================================================================
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
+// ROTA RAIZ AGORA APONTA PARA O DASHBOARD/LOGIN
 app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// NOVA ROTA PARA O DASHBOARD (APONTA PARA O MESMO ARQUIVO)
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// NOVA ROTA PARA O CARDÁPIO DO CLIENTE
+app.get('/cardapio', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
