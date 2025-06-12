@@ -7,10 +7,31 @@ const cors = require('cors');
 const db = require('./database.js');
 const multer = require('multer');
 const path = require('path');
-const sharp = require('sharp');
-const fs = require('fs').promises;
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+
+// --- CONFIGURAÇÃO DO CLOUDINARY PARA UPLOAD DE IMAGENS ---
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'pamonharia', // Nome da pasta onde as imagens ficarão na Cloudinary
+    format: 'webp',
+    transformation: [{ width: 500, height: 500, crop: 'limit' }]
+  },
+});
+
+const upload = multer({ storage: storage });
+// --- FIM DA CONFIGURAÇÃO DO CLOUDINARY ---
+
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -25,19 +46,6 @@ app.use(express.static('public'));
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-
-const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
-
-const UPLOAD_DIR = path.join(__dirname, 'public/images');
-
-const garantirPastaDeUploads = async () => {
-    try {
-        await fs.mkdir(UPLOAD_DIR, { recursive: true });
-    } catch (error) {
-        console.error("ERRO CRÍTICO: Não foi possível criar o diretório de uploads.", error);
-    }
-};
 
 // =================================================================================================
 // --- LÓGICA DE AUTENTICAÇÃO ---
@@ -224,8 +232,7 @@ app.post('/produtos_base', protegerRota, apenasAdmin, upload.single('imagem'), a
         const { nome, descricao, setor_id } = req.body;
         if (!req.file) return res.status(400).json({ error: "A imagem é obrigatória." });
         
-        const nomeArquivo = `${Date.now()}-${nome.replace(/\s+/g, '-').toLowerCase()}.webp`;
-        const imagem_url = `/images/${nomeArquivo}`;
+        const imagem_url = req.file.path; // URL segura do Cloudinary
         
         const { rows } = await db.query(`INSERT INTO produtos_base (nome, descricao, setor_id, imagem_url) VALUES ($1, $2, $3, $4) RETURNING id`,
             [nome, descricao, setor_id, imagem_url]);
@@ -240,13 +247,16 @@ app.put('/produtos_base/:id', protegerRota, apenasAdmin, upload.single('imagem')
     try {
         const { id } = req.params;
         const { nome, descricao, setor_id } = req.body;
+        
         let imagem_url;
         if (req.file) {
-            imagem_url = `/images/${Date.now()}-${nome.replace(/\s+/g, '-').toLowerCase()}.webp`;
+            imagem_url = req.file.path; // URL segura do Cloudinary se uma nova imagem for enviada
         }
+
         let sql = 'UPDATE produtos_base SET nome = $1, descricao = $2, setor_id = $3';
         const params = [nome, descricao, setor_id];
         let paramCount = 4;
+        
         if(imagem_url) {
             sql += `, imagem_url = $${paramCount++}`;
             params.push(imagem_url);
@@ -355,6 +365,7 @@ app.post('/produtos_base/:id/duplicar', protegerRota, apenasAdmin, async (req, r
     }
 });
 
+
 app.post('/setores', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { rows } = await db.query(`INSERT INTO setores (nome) VALUES ($1) RETURNING id`, [req.body.nome]);
@@ -385,8 +396,8 @@ app.delete('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
     }
 });
 
+
 const iniciarServidor = async () => {
-    await garantirPastaDeUploads();
     app.listen(PORT, () => {
         console.log(`Servidor rodando na porta ${PORT}`);
     });
