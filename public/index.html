@@ -32,41 +32,10 @@
         .produto-esgotado { filter: grayscale(1); opacity: 0.7; }
         .cart-checkout-container { width: 100%; max-width: 600px; background: var(--cor-superficie); border: 1px solid var(--cor-borda); border-radius: 8px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
         .cart-checkout-container h2, .cart-checkout-container h3 { margin-top: 0; color: var(--cor-texto-principal); border-bottom: 1px solid var(--cor-borda); padding-bottom: 10px; }
-        
-        #cart-items {
-            padding: 0;
-            max-height: 350px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-        
-        #cart-items li.cart-item:last-child {
-            border-bottom: none;
-            padding-bottom: 0; 
-        }
-        
-        /* CORREÇÃO 1 (CSS): O seletor foi alterado de '#cart-items li:first-child' para '.cart-empty-message'.
-           Isso garante que este estilo SÓ se aplique à mensagem de carrinho vazio. */
-        .cart-empty-message { 
-            color: var(--cor-texto-secundario); 
-            list-style: none; 
-            text-align: center; 
-            padding: 20px; 
-        }
-
-        .cart-item {
-            list-style: none;
-            padding-bottom: 15px;
-            border-bottom: 1px solid var(--cor-borda);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: nowrap;
-        }
-        
+        #cart-items { padding: 0; max-height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
+        #cart-items li.cart-item:last-child { border-bottom: none; padding-bottom: 0; }
+        .cart-empty-message { color: var(--cor-texto-secundario); list-style: none; text-align: center; padding: 20px; }
+        .cart-item { list-style: none; padding-bottom: 15px; border-bottom: 1px solid var(--cor-borda); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: nowrap; }
         .cart-item-info { flex-grow: 1; min-width: 0; }
         .cart-item-info span { display: block; }
         .cart-item-info .item-name { font-weight: bold; color: var(--cor-texto-principal); }
@@ -127,7 +96,7 @@
 <body>
     <header class="header"><h1>Saborosa Pamonha do <span>Goiás</span></h1><p>Escolha seus itens e confirme o pedido no WhatsApp!</p></header>
     <main class="container">
-        <section class="menu"><h2>Nosso Cardápio</h2><div class="product-list" id="product-list"></div></section>
+        <section class="menu"><h2>Nosso Cardápio</h2><div class="product-list" id="product-list"><p>Carregando cardápio...</p></div></section>
         <section class="cart-checkout-container" id="carrinho-secao"><h2>Seu Pedido</h2><ul id="cart-items"><li>Seu carrinho está vazio.</li></ul>
         <div class="checkout-section">
             <h3>Como deseja receber?</h3>
@@ -152,33 +121,287 @@
     <a href="#carrinho-secao" id="floating-cart-btn" class="floating-cart-btn"><svg class="cart-icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2zM7.17 14.75l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.37-.66-.11-1.48-.87-1.48H5.21l-.94-2H1v2h2l3.6 7.59-1.35 2.44C4.52 15.37 5.24 17 7 17h12v-2H7z"/></svg><span id="cart-item-count" class="cart-item-count">0</span></a>
 
 <script>
+    // --- CONFIGURAÇÕES GLOBAIS ---
     const backendUrl = 'https://pamonharia-servidor.onrender.com';
-    const numeroWhatsApp = '5562000000000';
+    const numeroWhatsApp = '5562000000000'; // Substitua pelo seu número real
     const TAXA_ENTREGA = 14.00;
     const ENDERECO_PAMONHARIA = 'Rua Tulipas, Quadra 01, Lote 06, C-02, Jardim Mondale';
     const LINK_LOCALIZACAO = 'https://maps.app.goo.gl/eseCGMFiB857R4BP9';
+
+    // --- ESTADO DA APLICAÇÃO ---
     let carrinho = [];
-    let cardapioCache = [];
+    let produtosCache = [];
+    let combosCache = [];
     let selecaoModal = { produtoBaseId: null, variacoes: {} };
-    let selecaoComboModal = { produtoBase: null, itens: {}, totalItens: 0, precoBase: 0, upcharge: 0 };
+    let selecaoComboModal = { combo: null, itens: {}, totalSelecionado: 0, upcharge: 0 };
+    let cartTimeoutTimer = null;
+    const TIMEOUT_DURATION = 5 * 60 * 1000; // 5 minutos
+
+    // --- ELEMENTOS DO DOM ---
     const floatingCartBtn = document.getElementById('floating-cart-btn');
     const cartItemCount = document.getElementById('cart-item-count');
-    const definicoesCombos = { 'Combo 10 Pamonhas': { totalObrigatorio: 10, precoBase: 119.90, setorIdAlvo: 1, regrasEspeciais: { 'Pamonha à Moda': { upcharge: 2.00 } } }, 'Combo 10 Bolinhos': { totalObrigatorio: 10, precoBase: 35.99, setorIdAlvo: 2, regrasEspeciais: {} } };
-    let cartTimeoutTimer = null;
-    const TIMEOUT_DURATION = 3 * 60 * 1000;
-    function clearCartAndNotify() { carrinho = []; atualizarDisplayCarrinho(); alert("Seu carrinho expirou por inatividade e foi esvaziado."); }
-    function resetCartTimeout() { clearTimeout(cartTimeoutTimer); if (carrinho.length > 0) { cartTimeoutTimer = setTimeout(clearCartAndNotify, TIMEOUT_DURATION); } }
-    function getEstoqueDisponivel(slug) { const todosOsItens = cardapioCache.flatMap(p => p.variacoes); const itemOriginal = todosOsItens.find(i => i.slug === slug); if (!itemOriginal) return 0; const quantidadeNoCarrinho = carrinho.filter(item => !item.isCombo).filter(item => item.slug === slug).reduce((acc, item) => acc + item.quantidade, 0) + carrinho.filter(item => item.isCombo).flatMap(c => c.subItens).filter(subItem => subItem.slug === slug).reduce((acc, subItem) => acc + subItem.quantidade, 0); return itemOriginal.quantidade_estoque - quantidadeNoCarrinho; }
-    async function carregarCardapio() { try { const response = await fetch(`${backendUrl}/cardapio`); const { data } = await response.json(); cardapioCache = data; renderizarMenuCompleto(); } catch(error) { console.error("Erro ao carregar cardápio:", error); document.getElementById('product-list').innerHTML = '<p>Não foi possível carregar o cardápio. Tente novamente mais tarde.</p>'; } }
-    function renderizarMenuCompleto() { const productList = document.getElementById('product-list'); productList.innerHTML = ''; if (cardapioCache.length === 0) { productList.innerHTML = '<p>Nenhum produto disponível no momento. Volte mais tarde!</p>'; return; } cardapioCache.forEach(produto => { let definicao = null; let isCombo = false; for (const nomeBaseCombo in definicoesCombos) { if (produto.nome.includes(nomeBaseCombo)) { definicao = definicoesCombos[nomeBaseCombo]; isCombo = true; break; } } let isEsgotado = false; let buttonText = "Escolher Opções"; if (isCombo) { const itensElegiveis = cardapioCache.filter(p => p.setor_id === definicao.setorIdAlvo); const estoqueDisponivelCombo = itensElegiveis.flatMap(p => p.variacoes).reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0); if (estoqueDisponivelCombo < definicao.totalObrigatorio) { isEsgotado = true; buttonText = "Combo Indisponível"; } } else { const totalEstoqueProduto = (produto.variacoes || []).reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0); if (totalEstoqueProduto === 0) { isEsgotado = true; buttonText = "Esgotado"; } } const productCard = document.createElement('div'); productCard.className = `product-card ${isEsgotado ? 'produto-esgotado' : ''}`; const onclickAction = isCombo ? `abrirModalCombo(${produto.id})` : `abrirModalVariacoes(${produto.id})`; productCard.innerHTML = `<img src="${produto.imagem_url}" alt="${produto.nome}"><div class="product-card-content"><div><h3>${produto.nome}</h3><p>${produto.descricao || ''}</p></div><button class="add-button" onclick="${onclickAction}" ${isEsgotado ? 'disabled' : ''}>${buttonText}</button></div>`; productList.appendChild(productCard); }); }
-    function fecharModal() { document.getElementById('variations-modal').style.display = 'none'; document.getElementById('combo-builder-modal').style.display = 'none'; }
-    function abrirModalVariacoes(produtoBaseId) { const produto = cardapioCache.find(p => p.id === produtoBaseId); if (!produto) return; selecaoModal = { produtoBaseId: produto.id, variacoes: {} }; document.getElementById('modal-product-name').innerText = produto.nome; const variationsList = document.getElementById('modal-variations-list'); variationsList.innerHTML = ''; produto.variacoes.forEach(v => { const estoqueDisponivel = getEstoqueDisponivel(v.slug); const isEsgotado = estoqueDisponivel === 0; variationsList.innerHTML += `<div class="variation-item ${isEsgotado ? 'esgotado' : ''}"><div class="variation-item-info"><span>${v.nome} (R$ ${v.preco.toFixed(2).replace('.',',')})</span><div class="stock-limit-msg" id="msg-v-${v.slug}">Limite em estoque atingido</div></div><div class="quantity-selector"><button class="quantity-btn" onclick="mudarQuantidadeModal('${v.slug}', -1)">-</button><span class="quantity-value" id="qty-v-${v.slug}">0</span><button class="quantity-btn" onclick="mudarQuantidadeModal('${v.slug}', 1)" ${isEsgotado ? 'disabled' : ''}>+</button></div></div>`; selecaoModal.variacoes[v.slug] = { ...v, quantidade: 0 }; }); document.getElementById('variations-modal').style.display = 'flex'; }
-    function mudarQuantidadeModal(slug, delta) { const variacao = selecaoModal.variacoes[slug]; if (!variacao) return; const estoqueDisponivel = getEstoqueDisponivel(slug); if (delta > 0 && variacao.quantidade >= estoqueDisponivel) { const msgEl = document.getElementById(`msg-v-${slug}`); if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); } return; } if (variacao.quantidade + delta >= 0) { variacao.quantidade += delta; document.getElementById(`qty-v-${slug}`).innerText = variacao.quantidade; } }
-    function adicionarVariacoesAoCarrinho() { const produtoBase = cardapioCache.find(p => p.id === selecaoModal.produtoBaseId); for(const slug in selecaoModal.variacoes){ const variacao = selecaoModal.variacoes[slug]; if(variacao.quantidade > 0){ const itemNoCarrinho = carrinho.find(item => item.slug === slug); if(itemNoCarrinho){ itemNoCarrinho.quantidade += variacao.quantidade; } else { carrinho.push({ slug: variacao.slug, nome: `${produtoBase.nome} (${variacao.nome})`, preco: variacao.preco, quantidade: variacao.quantidade, isCombo: false }); } } } atualizarDisplayCarrinho(); fecharModal(); }
-    function abrirModalCombo(produtoBaseId) { const produto = cardapioCache.find(p => p.id === produtoBaseId); let definicao = null; for (const nomeBaseCombo in definicoesCombos) { if (produto.nome.includes(nomeBaseCombo)) { definicao = definicoesCombos[nomeBaseCombo]; break; } } if (!produto || !definicao) return; selecaoComboModal = { produtoBase: produto, definicao: definicao, itens: {}, totalSelecionado: 0, upcharge: 0 }; document.getElementById('combo-modal-product-name').innerText = produto.nome; const itemsList = document.getElementById('combo-modal-items-list'); itemsList.innerHTML = ''; const itensElegiveis = cardapioCache.filter(p => p.setor_id === definicao.setorIdAlvo).flatMap(p => p.variacoes.map(v => ({...v, nomeBase: p.nome, nomeCompleto: `${p.nome} (${v.nome})`}))); itensElegiveis.forEach(item => { const regraEspecial = definicao.regrasEspeciais[item.nomeBase] || {}; const upcharge = regraEspecial.upcharge || 0; const estoqueDisponivel = getEstoqueDisponivel(item.slug); selecaoComboModal.itens[item.slug] = { ...item, quantidade: 0, upcharge: upcharge, estoqueDisponivel: estoqueDisponivel }; const upchargeText = upcharge > 0 ? `<div class="item-upcharge">+ R$ ${upcharge.toFixed(2).replace('.',',')}</div>` : ''; const isEsgotado = estoqueDisponivel === 0; itemsList.innerHTML += `<div class="combo-item ${isEsgotado ? 'esgotado' : ''}"><div class="combo-item-info"><div class="item-name">${item.nomeCompleto}</div>${upchargeText}<div class="stock-limit-msg" id="msg-c-${item.slug}">Limite em estoque atingido</div></div><div class="quantity-selector"><button class="quantity-btn" onclick="mudarQuantidadeCombo('${item.slug}', -1)">-</button><span class="quantity-value" id="combo-qty-${item.slug}">0</span><button class="quantity-btn" onclick="mudarQuantidadeCombo('${item.slug}', 1)" ${isEsgotado ? 'disabled' : ''}>+</button></div></div>`; }); atualizarStatusModalCombo(); document.getElementById('combo-builder-modal').style.display = 'flex'; }
-    function mudarQuantidadeCombo(slug, delta) { const item = selecaoComboModal.itens[slug]; const novoTotal = selecaoComboModal.totalSelecionado + delta; if (delta > 0 && item.quantidade >= item.estoqueDisponivel) { const msgEl = document.getElementById(`msg-c-${slug}`); if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); } return; } if (item.quantidade + delta >= 0 && novoTotal <= selecaoComboModal.definicao.totalObrigatorio) { item.quantidade += delta; document.getElementById(`combo-qty-${slug}`).innerText = item.quantidade; atualizarStatusModalCombo(); } }
-    function atualizarStatusModalCombo() { let totalSelecionado = 0; let upcharge = 0; for(const slug in selecaoComboModal.itens) { const item = selecaoComboModal.itens[slug]; totalSelecionado += item.quantidade; if(item.upcharge > 0) { upcharge += item.quantidade * item.upcharge; } } selecaoComboModal.totalSelecionado = totalSelecionado; selecaoComboModal.upcharge = upcharge; const totalObrigatorio = selecaoComboModal.definicao.totalObrigatorio; const statusEl = document.getElementById('combo-status'); statusEl.innerText = `Selecione ${totalObrigatorio} itens (${totalSelecionado} / ${totalObrigatorio})`; const addButton = document.getElementById('add-combo-button'); if(totalSelecionado === totalObrigatorio) { addButton.disabled = false; statusEl.style.color = 'var(--cor-sucesso)'; } else { addButton.disabled = true; statusEl.style.color = 'var(--cor-principal)'; } }
-    function adicionarComboAoCarrinho() { const { produtoBase, itens, definicao, upcharge } = selecaoComboModal; const precoFinal = definicao.precoBase + upcharge; let detalhes = []; let subItens = []; for(const slug in itens) { if (itens[slug].quantidade > 0) { detalhes.push(`${itens[slug].quantidade}x ${itens[slug].nome}`); subItens.push({ slug: slug, quantidade: itens[slug].quantidade }); } } carrinho.push({ slug: `combo-${produtoBase.id}-${Date.now()}`, nome: produtoBase.nome, preco: precoFinal, quantidade: 1, detalhes: detalhes.join(', '), isCombo: true, subItens: subItens }); atualizarDisplayCarrinho(); fecharModal(); }
+
+    // --- LÓGICA PRINCIPAL ---
+
+    async function carregarTudo() {
+        try {
+            const [produtosRes, combosRes] = await Promise.all([
+                fetch(`${backendUrl}/cardapio`),
+                fetch(`${backendUrl}/api/combos`)
+            ]);
+            if (!produtosRes.ok || !combosRes.ok) {
+                throw new Error('Falha na comunicação com o servidor.');
+            }
+            produtosCache = (await produtosRes.json()).data;
+            combosCache = (await combosRes.json()).data;
+            renderizarCardapio();
+        } catch(error) {
+            console.error("Erro ao carregar dados:", error);
+            document.getElementById('product-list').innerHTML = '<p>Não foi possível carregar o cardápio. Tente novamente mais tarde.</p>';
+        }
+    }
+
+    function renderizarCardapio() {
+        const productList = document.getElementById('product-list');
+        productList.innerHTML = '';
+        
+        // Renderiza os combos primeiro
+        combosCache.forEach(combo => {
+            const isEsgotado = verificarEstoqueCombo(combo);
+            const productCard = document.createElement('div');
+            productCard.className = `product-card ${isEsgotado ? 'produto-esgotado' : ''}`;
+            productCard.innerHTML = `
+                <img src="${combo.imagem_url}" alt="${combo.nome}">
+                <div class="product-card-content">
+                    <div>
+                        <h3>${combo.nome}</h3>
+                        <p>${combo.descricao || ''}</p>
+                    </div>
+                    <button class="add-button" onclick="abrirModalCombo(${combo.id})" ${isEsgotado ? 'disabled' : ''}>
+                        ${isEsgotado ? 'Combo Indisponível' : 'Montar Combo'}
+                    </button>
+                </div>`;
+            productList.appendChild(productCard);
+        });
+
+        // Renderiza os produtos normais
+        produtosCache.forEach(produto => {
+            const totalEstoqueProduto = (produto.variacoes || []).reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0);
+            const isEsgotado = totalEstoqueProduto === 0;
+            const productCard = document.createElement('div');
+            productCard.className = `product-card ${isEsgotado ? 'produto-esgotado' : ''}`;
+            productCard.innerHTML = `
+                <img src="${produto.imagem_url}" alt="${produto.nome}">
+                <div class="product-card-content">
+                    <div>
+                        <h3>${produto.nome}</h3>
+                        <p>${produto.descricao || ''}</p>
+                    </div>
+                    <button class="add-button" onclick="abrirModalVariacoes(${produto.id})" ${isEsgotado ? 'disabled' : ''}>
+                        ${isEsgotado ? 'Esgotado' : 'Escolher Opções'}
+                    </button>
+                </div>`;
+            productList.appendChild(productCard);
+        });
+    }
+
+    function fecharModal() {
+        document.querySelectorAll('.modal-backdrop').forEach(modal => modal.style.display = 'none');
+    }
+
+    // --- LÓGICA DE PRODUTOS NORMAIS ---
+
+    function abrirModalVariacoes(produtoBaseId) {
+        const produto = produtosCache.find(p => p.id === produtoBaseId);
+        if (!produto) return;
+        selecaoModal = { produtoBaseId: produto.id, variacoes: {} };
+        document.getElementById('modal-product-name').innerText = produto.nome;
+        const variationsList = document.getElementById('modal-variations-list');
+        variationsList.innerHTML = '';
+        produto.variacoes.forEach(v => {
+            const estoqueDisponivel = getEstoqueDisponivel(v.slug);
+            const isEsgotado = estoqueDisponivel === 0;
+            variationsList.innerHTML += `
+                <div class="variation-item ${isEsgotado ? 'esgotado' : ''}">
+                    <div class="variation-item-info">
+                        <span>${v.nome} (R$ ${Number(v.preco).toFixed(2).replace('.',',')})</span>
+                        <div class="stock-limit-msg" id="msg-v-${v.slug}">Limite em estoque atingido</div>
+                    </div>
+                    <div class="quantity-selector">
+                        <button class="quantity-btn" onclick="mudarQuantidadeModal('${v.slug}', -1)">-</button>
+                        <span class="quantity-value" id="qty-v-${v.slug}">0</span>
+                        <button class="quantity-btn" onclick="mudarQuantidadeModal('${v.slug}', 1)" ${isEsgotado ? 'disabled' : ''}>+</button>
+                    </div>
+                </div>`;
+            selecaoModal.variacoes[v.slug] = { ...v, quantidade: 0 };
+        });
+        document.getElementById('variations-modal').style.display = 'flex';
+    }
+
+    function mudarQuantidadeModal(slug, delta) {
+        const variacao = selecaoModal.variacoes[slug];
+        if (!variacao) return;
+        const estoqueDisponivel = getEstoqueDisponivel(slug);
+        if (delta > 0 && variacao.quantidade >= estoqueDisponivel) {
+            const msgEl = document.getElementById(`msg-v-${slug}`);
+            if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); }
+            return;
+        }
+        if (variacao.quantidade + delta >= 0) {
+            variacao.quantidade += delta;
+            document.getElementById(`qty-v-${slug}`).innerText = variacao.quantidade;
+        }
+    }
+
+    function adicionarVariacoesAoCarrinho() {
+        const produtoBase = produtosCache.find(p => p.id === selecaoModal.produtoBaseId);
+        for(const slug in selecaoModal.variacoes){
+            const variacao = selecaoModal.variacoes[slug];
+            if(variacao.quantidade > 0){
+                const itemNoCarrinho = carrinho.find(item => !item.isCombo && item.slug === slug);
+                if(itemNoCarrinho){
+                    itemNoCarrinho.quantidade += variacao.quantidade;
+                } else {
+                    carrinho.push({ id: `prod-${variacao.id}`, slug: variacao.slug, nome: `${produtoBase.nome} (${variacao.nome})`, preco: variacao.preco, quantidade: variacao.quantidade, isCombo: false });
+                }
+            }
+        }
+        atualizarDisplayCarrinho();
+        fecharModal();
+    }
+
+    // --- LÓGICA DE COMBOS (NOVA LÓGICA) ---
+    
+    function verificarEstoqueCombo(combo) {
+        // Encontra todos os itens elegíveis para o combo
+        const itensElegiveis = produtosCache.flatMap(p => {
+            const eDoSetor = combo.regras.some(r => r.setor_id_alvo === p.setor_id);
+            const eProdutoEspecifico = combo.regras.some(r => r.produto_base_id_alvo === p.id);
+            return (eDoSetor || eProdutoEspecifico) ? p.variacoes : [];
+        });
+        const estoqueTotalDisponivel = itensElegiveis.reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0);
+        return estoqueTotalDisponivel < combo.quantidade_itens_obrigatoria;
+    }
+
+
+    function abrirModalCombo(comboId) {
+        const combo = combosCache.find(c => c.id === comboId);
+        if (!combo) return;
+        
+        selecaoComboModal = { combo: combo, itens: {}, totalSelecionado: 0, upcharge: 0 };
+        document.getElementById('combo-modal-product-name').innerText = combo.nome;
+        
+        const itemsList = document.getElementById('combo-modal-items-list');
+        itemsList.innerHTML = '';
+
+        const itensElegiveis = produtosCache.flatMap(p => {
+            const regraSetor = combo.regras.find(r => r.setor_id_alvo === p.setor_id);
+            const regraProduto = combo.regras.find(r => r.produto_base_id_alvo === p.id);
+            return (regraSetor || regraProduto) ? p.variacoes.map(v => ({...v, produtoBase: p})) : [];
+        }).filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i); // Remove duplicatas
+
+        itensElegiveis.forEach(item => {
+            const regra = combo.regras.find(r => r.produto_base_id_alvo === item.produtoBase.id) || { upcharge: 0 };
+            const upcharge = regra.upcharge;
+            const estoqueDisponivel = getEstoqueDisponivel(item.slug);
+            selecaoComboModal.itens[item.slug] = { ...item, quantidade: 0, upcharge: upcharge, estoqueDisponivel: estoqueDisponivel };
+            
+            const upchargeText = upcharge > 0 ? `<div class="item-upcharge">+ R$ ${Number(upcharge).toFixed(2).replace('.',',')}</div>` : '';
+            const isEsgotado = estoqueDisponivel === 0;
+
+            itemsList.innerHTML += `
+                <div class="combo-item ${isEsgotado ? 'esgotado' : ''}">
+                    <div class="combo-item-info">
+                        <div class="item-name">${item.produtoBase.nome} (${item.nome})</div>
+                        ${upchargeText}
+                        <div class="stock-limit-msg" id="msg-c-${item.slug}">Limite em estoque atingido</div>
+                    </div>
+                    <div class="quantity-selector">
+                        <button class="quantity-btn" onclick="mudarQuantidadeCombo('${item.slug}', -1)">-</button>
+                        <span class="quantity-value" id="combo-qty-${item.slug}">0</span>
+                        <button class="quantity-btn" onclick="mudarQuantidadeCombo('${item.slug}', 1)" ${isEsgotado ? 'disabled' : ''}>+</button>
+                    </div>
+                </div>`;
+        });
+
+        atualizarStatusModalCombo();
+        document.getElementById('combo-builder-modal').style.display = 'flex';
+    }
+
+    function mudarQuantidadeCombo(slug, delta) {
+        const item = selecaoComboModal.itens[slug];
+        const novoTotal = selecaoComboModal.totalSelecionado + delta;
+
+        if (delta > 0 && item.quantidade >= item.estoqueDisponivel) {
+            const msgEl = document.getElementById(`msg-c-${slug}`);
+            if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); }
+            return;
+        }
+
+        if (item.quantidade + delta >= 0 && novoTotal <= selecaoComboModal.combo.quantidade_itens_obrigatoria) {
+            item.quantidade += delta;
+            document.getElementById(`combo-qty-${slug}`).innerText = item.quantidade;
+            atualizarStatusModalCombo();
+        }
+    }
+
+    function atualizarStatusModalCombo() {
+        let totalSelecionado = 0;
+        let upcharge = 0;
+        for(const slug in selecaoComboModal.itens) {
+            const item = selecaoComboModal.itens[slug];
+            totalSelecionado += item.quantidade;
+            if(item.upcharge > 0) {
+                upcharge += item.quantidade * item.upcharge;
+            }
+        }
+        selecaoComboModal.totalSelecionado = totalSelecionado;
+        selecaoComboModal.upcharge = upcharge;
+        
+        const totalObrigatorio = selecaoComboModal.combo.quantidade_itens_obrigatoria;
+        const statusEl = document.getElementById('combo-status');
+        statusEl.innerText = `Selecione ${totalObrigatorio} itens (${totalSelecionado} / ${totalObrigatorio})`;
+        
+        const addButton = document.getElementById('add-combo-button');
+        if(totalSelecionado === totalObrigatorio) {
+            addButton.disabled = false;
+            statusEl.style.color = 'var(--cor-sucesso)';
+        } else {
+            addButton.disabled = true;
+            statusEl.style.color = 'var(--cor-principal)';
+        }
+    }
+
+    function adicionarComboAoCarrinho() {
+        const { combo, itens, upcharge } = selecaoComboModal;
+        const precoFinal = combo.preco_base + upcharge;
+        let detalhes = [];
+        let subItens = [];
+
+        for(const slug in itens) {
+            if (itens[slug].quantidade > 0) {
+                detalhes.push(`${itens[slug].quantidade}x ${itens[slug].produtoBase.nome} (${itens[slug].nome})`);
+                subItens.push({ slug: slug, quantidade: itens[slug].quantidade });
+            }
+        }
+
+        carrinho.push({ 
+            id: `combo-${combo.id}-${Date.now()}`, 
+            nome: combo.nome, 
+            preco: precoFinal, 
+            quantidade: 1, 
+            detalhes: detalhes.join(', '), 
+            isCombo: true, 
+            subItens: subItens 
+        });
+
+        atualizarDisplayCarrinho();
+        fecharModal();
+    }
+
+
+    // --- LÓGICA DO CARRINHO ---
+
     function atualizarDisplayCarrinho() {
         const cartItems = document.getElementById('cart-items');
         const subtotalEl = document.getElementById('subtotal').querySelector('strong');
@@ -187,12 +410,12 @@
         const grandTotalEl = document.getElementById('grand-total').querySelector('strong');
         const finalizeButton = document.getElementById('finalize-button');
         const deliveryDetailsEl = document.getElementById('delivery-details');
+
         cartItems.innerHTML = '';
         let subtotal = 0;
-        let totalItens = 0;
+        let totalItensNoCarrinho = 0;
+
         if (carrinho.length === 0) {
-            /* CORREÇÃO 2 (JavaScript): Adicionada a classe 'cart-empty-message' ao 'li' para que o CSS
-               possa selecioná-lo de forma única, sem afetar os itens reais do carrinho. */
             cartItems.innerHTML = '<li class="cart-empty-message">Seu carrinho está vazio.</li>';
             finalizeButton.classList.add('disabled');
             floatingCartBtn.classList.remove('visible');
@@ -201,18 +424,29 @@
             finalizeButton.classList.remove('disabled');
             floatingCartBtn.classList.add('visible');
             resetCartTimeout();
+
             carrinho.forEach(item => {
                 const li = document.createElement('li');
                 li.className = 'cart-item';
                 const detalhesHtml = item.detalhes ? `<div class="item-details">${item.detalhes}</div>` : '';
-                const qtdeControlsHtml = item.isCombo ? '' : `<button class="quantity-btn" onclick="mudarQuantidadeCarrinho('${item.slug}', -1)">-</button><span class="quantity-value">${item.quantidade}</span><button class="quantity-btn" onclick="mudarQuantidadeCarrinho('${item.slug}', 1)">+</button>`;
-                li.innerHTML = `<div class="cart-item-info"><span class="item-name">${item.quantidade}x ${item.nome}</span>${detalhesHtml}<span class="item-price">R$ ${item.preco.toFixed(2).replace('.', ',')}</span></div><div class="cart-item-controls">${qtdeControlsHtml}<button class="remove-btn" onclick="removerItemDoCarrinho('${item.slug}')">×</button></div>`;
+                const qtdeControlsHtml = item.isCombo ? '' : `<button class="quantity-btn" onclick="mudarQuantidadeCarrinho('${item.id}', -1)">-</button><span class="quantity-value">${item.quantidade}</span><button class="quantity-btn" onclick="mudarQuantidadeCarrinho('${item.id}', 1)">+</button>`;
+                li.innerHTML = `
+                    <div class="cart-item-info">
+                        <span class="item-name">${item.quantidade}x ${item.nome}</span>
+                        ${detalhesHtml}
+                        <span class="item-price">R$ ${Number(item.preco).toFixed(2).replace('.', ',')}</span>
+                    </div>
+                    <div class="cart-item-controls">
+                        ${qtdeControlsHtml}
+                        <button class="remove-btn" onclick="removerItemDoCarrinho('${item.id}')">×</button>
+                    </div>`;
                 cartItems.appendChild(li);
                 subtotal += item.preco * item.quantidade;
-                totalItens += item.quantidade;
+                totalItensNoCarrinho += item.quantidade;
             });
         }
-        cartItemCount.innerText = totalItens;
+        cartItemCount.innerText = totalItensNoCarrinho;
+
         const tipoRecebimento = document.querySelector('input[name="tipo-recebimento"]:checked').value;
         let totalFinal = subtotal;
         if (tipoRecebimento === 'Entrega') {
@@ -230,13 +464,101 @@
         }
         subtotalEl.innerText = `R$ ${subtotal.toFixed(2).replace('.', ',')}`;
         grandTotalEl.innerText = `R$ ${totalFinal.toFixed(2).replace('.', ',')}`;
-        renderizarMenuCompleto();
+        renderizarCardapio();
     }
-    function mudarQuantidadeCarrinho(slug, delta) { const itemNoCarrinho = carrinho.find(item => item.slug === slug); if (!itemNoCarrinho) return; const estoqueDisponivel = getEstoqueDisponivel(slug) + itemNoCarrinho.quantidade; if (delta > 0 && itemNoCarrinho.quantidade >= estoqueDisponivel) { alert("Não há mais estoque disponível para este item."); return; } itemNoCarrinho.quantidade += delta; if (itemNoCarrinho.quantidade <= 0) { removerItemDoCarrinho(slug); } else { atualizarDisplayCarrinho(); } }
-    function removerItemDoCarrinho(slug) { carrinho = carrinho.filter(item => item.slug !== slug); atualizarDisplayCarrinho(); }
-    function finalizarPedidoWhatsApp(event) { event.preventDefault(); if (carrinho.length === 0) { alert('Seu carrinho está vazio!'); return; } const tipoRecebimento = document.querySelector('input[name="tipo-recebimento"]:checked').value; const nomeRecebedor = document.getElementById('nome-recebedor').value.trim(); const endereco = document.getElementById('endereco-entrega').value.trim(); if (tipoRecebimento === 'Entrega' && (!nomeRecebedor || !endereco)) { alert('Por favor, preencha o nome de quem irá receber e o endereço completo para a entrega.'); return; } let subtotal = 0; let mensagem = 'Olá! Gostaria de fazer o seguinte pedido do cardápio online:\n\n'; mensagem += '🍽️ *ITENS DO PEDIDO*\n'; carrinho.forEach(item => { mensagem += `${item.quantidade}x ${item.nome}`; if (item.detalhes) { mensagem += `\n   ↳ _(${item.detalhes})_`; } mensagem += '\n'; subtotal += item.preco * item.quantidade; }); mensagem += '\n'; const formaPagamento = document.querySelector('input[name="forma-pagamento"]:checked').value; if (tipoRecebimento === 'Entrega') { mensagem += `👤 *NOME PARA ENTREGA*\n${nomeRecebedor}\n\n🏠 *ENDEREÇO*\n${endereco}\n\n`; } else { mensagem += `🚶 *RETIRADA NO LOCAL*\n\nNosso endereço é:\n${ENDERECO_PAMONHARIA}\n\n📍 *Ver no mapa:*\n${LINK_LOCALIZACAO}\n\n`; } mensagem += `💳 *PAGAMENTO*\n${formaPagamento}\n\n`; let totalFinal = subtotal; if (tipoRecebimento === 'Entrega') { totalFinal += TAXA_ENTREGA; mensagem += `Subtotal: R$ ${subtotal.toFixed(2).replace('.', ',')}\nTaxa de Entrega: R$ ${TAXA_ENTREGA.toFixed(2).replace('.', ',')}\n`; } mensagem += `*TOTAL: R$ ${totalFinal.toFixed(2).replace('.', ',')}*`; if (tipoRecebimento === 'Entrega') { mensagem += `\n\n_Se possível, por favor, envie sua localização pelo mapa do WhatsApp para facilitar a entrega. 👇_`; } const link = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensagem)}`; window.open(link, '_blank'); }
+
+    function mudarQuantidadeCarrinho(itemId, delta) {
+        const itemNoCarrinho = carrinho.find(item => item.id === itemId);
+        if (!itemNoCarrinho || itemNoCarrinho.isCombo) return;
+        const estoqueDisponivel = getEstoqueDisponivel(itemNoCarrinho.slug);
+        if (delta > 0 && itemNoCarrinho.quantidade >= estoqueDisponivel) {
+            alert("Não há mais estoque disponível para este item.");
+            return;
+        }
+        itemNoCarrinho.quantidade += delta;
+        if (itemNoCarrinho.quantidade <= 0) {
+            removerItemDoCarrinho(itemId);
+        } else {
+            atualizarDisplayCarrinho();
+        }
+    }
+
+    function removerItemDoCarrinho(itemId) {
+        carrinho = carrinho.filter(item => item.id !== itemId);
+        atualizarDisplayCarrinho();
+    }
     
-    window.onload = carregarCardapio;
+    // --- FUNÇÕES UTILITÁRIAS ---
+
+    function getEstoqueDisponivel(slug) {
+        const todosOsItens = produtosCache.flatMap(p => p.variacoes);
+        const itemOriginal = todosOsItens.find(i => i.slug === slug);
+        if (!itemOriginal) return 0;
+
+        let quantidadeNoCarrinho = 0;
+        // Soma itens normais no carrinho
+        quantidadeNoCarrinho += carrinho.filter(item => !item.isCombo && item.slug === slug).reduce((acc, item) => acc + item.quantidade, 0);
+        // Soma itens dentro de combos no carrinho
+        quantidadeNoCarrinho += carrinho.filter(item => item.isCombo).flatMap(c => c.subItens).filter(subItem => subItem.slug === slug).reduce((acc, subItem) => acc + subItem.quantidade, 0);
+        
+        return itemOriginal.quantidade_estoque - quantidadeNoCarrinho;
+    }
+
+    function resetCartTimeout() {
+        clearTimeout(cartTimeoutTimer);
+        if (carrinho.length > 0) {
+            cartTimeoutTimer = setTimeout(() => {
+                carrinho = [];
+                atualizarDisplayCarrinho();
+                alert("Seu carrinho expirou por inatividade e foi esvaziado.");
+            }, TIMEOUT_DURATION);
+        }
+    }
+
+    function finalizarPedidoWhatsApp(event) {
+        event.preventDefault();
+        if (carrinho.length === 0) { alert('Seu carrinho está vazio!'); return; }
+        const tipoRecebimento = document.querySelector('input[name="tipo-recebimento"]:checked').value;
+        const nomeRecebedor = document.getElementById('nome-recebedor').value.trim();
+        const endereco = document.getElementById('endereco-entrega').value.trim();
+        if (tipoRecebimento === 'Entrega' && (!nomeRecebedor || !endereco)) {
+            alert('Por favor, preencha o nome de quem irá receber e o endereço completo para a entrega.');
+            return;
+        }
+        let subtotal = 0;
+        let mensagem = 'Olá! Gostaria de fazer o seguinte pedido do cardápio online:\n\n';
+        mensagem += '🍽️ *ITENS DO PEDIDO*\n';
+        carrinho.forEach(item => {
+            mensagem += `${item.quantidade}x ${item.nome}`;
+            if (item.detalhes) {
+                mensagem += `\n  ↳ _(${item.detalhes})_`;
+            }
+            mensagem += '\n';
+            subtotal += item.preco * item.quantidade;
+        });
+        mensagem += '\n';
+        const formaPagamento = document.querySelector('input[name="forma-pagamento"]:checked').value;
+        if (tipoRecebimento === 'Entrega') {
+            mensagem += `👤 *NOME PARA ENTREGA*\n${nomeRecebedor}\n\n🏠 *ENDEREÇO*\n${endereco}\n\n`;
+        } else {
+            mensagem += `🚶 *RETIRADA NO LOCAL*\n\nNosso endereço é:\n${ENDERECO_PAMONHARIA}\n\n📍 *Ver no mapa:*\n${LINK_LOCALIZACAO}\n\n`;
+        }
+        mensagem += `💳 *PAGAMENTO*\n${formaPagamento}\n\n`;
+        let totalFinal = subtotal;
+        if (tipoRecebimento === 'Entrega') {
+            totalFinal += TAXA_ENTREGA;
+            mensagem += `Subtotal: R$ ${subtotal.toFixed(2).replace('.', ',')}\nTaxa de Entrega: R$ ${TAXA_ENTREGA.toFixed(2).replace('.', ',')}\n`;
+        }
+        mensagem += `*TOTAL: R$ ${totalFinal.toFixed(2).replace('.', ',')}*`;
+        if (tipoRecebimento === 'Entrega') {
+            mensagem += `\n\n_Se possível, por favor, envie sua localização pelo mapa do WhatsApp para facilitar a entrega. 👇_`;
+        }
+        const link = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensagem)}`;
+        window.open(link, '_blank');
+    }
+    
+    // --- INICIALIZAÇÃO ---
+    window.onload = carregarTudo;
 </script>
 </body>
 </html>
