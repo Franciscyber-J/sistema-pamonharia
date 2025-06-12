@@ -9,7 +9,10 @@ const multer = require('multer');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { zonedTimeToUtc, utcToZonedTime, format } = require('date-fns-tz');
+
+// --- CORREÇÃO APLICADA AQUI ---
+const { format } = require('date-fns');
+const { utcToZonedTime } = require('date-fns-tz');
 
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
@@ -91,18 +94,16 @@ const apenasAdmin = (req, res, next) => {
 // --- ROTAS DA API ---
 // =================================================================================================
 
-// --- ROTAS PARA HORÁRIO DE FUNCIONAMENTO (COM DEPURAÇÃO) ---
+// --- ROTAS PARA HORÁRIO DE FUNCIONAMENTO ---
 app.get('/api/loja/status', async (req, res) => {
     try {
         const { rows } = await db.query('SELECT aberta_manualmente, horarios_json FROM configuracao_loja WHERE id = 1');
-        console.log('LOG DE DEPURAÇÃO: Dados buscados do banco:', rows[0]); // LOG 1
-        
         const config = rows[0];
         if (!config) {
             return res.json({ status: 'fechado', mensagem: 'Configuração da loja não encontrada.' });
         }
         if (config.aberta_manualmente) {
-            return res.json({ status: 'aberto', mensagem: 'Loja aberta manualmente!' });
+            return res.json({ status: 'aberto', mensagem: 'Estamos abertos!' });
         }
         if (!config.horarios_json) {
              return res.json({ status: 'fechado', mensagem: 'Horários de funcionamento não configurados.' });
@@ -127,7 +128,7 @@ app.get('/api/loja/status', async (req, res) => {
         }
 
     } catch (err) {
-        console.error("ERRO COMPLETO AO VERIFICAR STATUS:", err); // LOG 2
+        console.error("ERRO COMPLETO AO VERIFICAR STATUS:", err);
         res.status(500).json({ error: 'Erro ao verificar status da loja.' });
     }
 });
@@ -151,7 +152,6 @@ app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (r
         res.status(500).json({ error: 'Erro ao atualizar configurações.' });
     }
 });
-
 
 // --- OUTRAS ROTAS DA API ---
 const getCardapioCompleto = async () => {
