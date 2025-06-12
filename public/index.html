@@ -20,7 +20,6 @@
         .header p { color: var(--cor-texto-secundario); margin-top: 5px; }
         .container { display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 30px; max-width: 1800px; margin-left: auto; margin-right: auto; }
         .menu { width: 100%; max-width: 1200px; }
-        /* --- NOVO ESTILO PARA O BANNER DE STATUS --- */
         #store-status-banner {
             padding: 15px;
             margin-bottom: 20px;
@@ -114,6 +113,9 @@
         .footer { text-align: center; margin-top: 40px; padding: 20px; border-top: 1px solid var(--cor-borda); color: var(--cor-texto-secundario); }
         .footer p { margin: 5px 0; }
         .footer a { color: var(--cor-principal); text-decoration: none; font-weight: bold; }
+        /* NOVO ESTILO PARA HORÁRIOS NO RODAPÉ */
+        #operating-hours-container { margin-top: 10px; }
+        #operating-hours-container p { margin: 4px 0; font-size: 0.9em; }
         @media (min-width: 992px) { .container { flex-direction: row; align-items: flex-start; gap: 40px; } .menu { flex: 2; } .cart-checkout-container { flex: 1; position: sticky; top: 20px; max-width: 450px; } }
     </style>
 </head>
@@ -151,6 +153,10 @@
         <p><strong>Saborosa Pamonha do Goiás</strong></p>
         <p>Rua Tulipas, Quadra 01, Lote 06, C-02, Jardim Mondale</p>
         <p><a href="https://maps.app.goo.gl/eseCGMFiB857R4BP9" target="_blank" rel="noopener noreferrer">Ver no Mapa</a></p>
+        <div id="operating-hours-container">
+            <p><strong>Horário de Funcionamento:</strong></p>
+            <div id="operating-hours-list"></div>
+        </div>
     </footer>
 
     <div class="modal-backdrop" id="variations-modal"><div class="modal"><div class="modal-header"><h2 id="modal-product-name"></h2><button class="modal-close-btn" onclick="fecharModal()">×</button></div><div class="modal-body" id="modal-variations-list"></div><div class="modal-footer"><button class="add-button" onclick="adicionarVariacoesAoCarrinho()">Adicionar ao Pedido</button></div></div></div>
@@ -173,7 +179,6 @@
     let selecaoComboModal = { combo: null, itens: {}, totalSelecionado: 0, upcharge: 0 };
     let cartTimeoutTimer = null;
     const TIMEOUT_DURATION = 5 * 60 * 1000;
-    // --- NOVAS VARIÁVEIS DE ESTADO ---
     let lojaEstaAberta = false;
     let mensagemLojaFechada = 'A loja está fechada no momento.';
 
@@ -182,8 +187,61 @@
     const cartItemCount = document.getElementById('cart-item-count');
     const productList = document.getElementById('product-list');
     const storeStatusBanner = document.getElementById('store-status-banner');
+    const operatingHoursList = document.getElementById('operating-hours-list');
 
-    // --- LÓGICA PRINCIPAL ATUALIZADA ---
+    // --- LÓGICA DE HORÁRIOS ---
+    function formatarHorarios(horarios) {
+        if (Object.keys(horarios).length === 0) {
+            operatingHoursList.innerHTML = '<p>Horários não definidos.</p>';
+            return;
+        }
+
+        const diasDaSemana = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+        const grupos = [];
+        let grupoAtual = null;
+
+        for (let i = 0; i < 7; i++) {
+            const dia = i.toString();
+            const horario = horarios[dia];
+
+            if (!horario || !horario.ativo) {
+                if (grupoAtual) {
+                    grupos.push(grupoAtual);
+                    grupoAtual = null;
+                }
+                grupos.push({ dias: [diasDaSemana[i]], horario: "Fechado" });
+                continue;
+            }
+
+            const horarioStr = `${horario.inicio} às ${horario.fim}`;
+            if (grupoAtual && grupoAtual.horario === horarioStr) {
+                grupoAtual.dias.push(diasDaSemana[i]);
+            } else {
+                if (grupoAtual) grupos.push(grupoAtual);
+                grupoAtual = { dias: [diasDaSemana[i]], horario: horarioStr };
+            }
+        }
+        if (grupoAtual) grupos.push(grupoAtual);
+
+        const gruposAgrupados = [];
+        let ultimoGrupo = null;
+        for (const grupo of grupos) {
+            if (ultimoGrupo && ultimoGrupo.horario === grupo.horario) {
+                ultimoGrupo.dias.push(...grupo.dias);
+            } else {
+                if (ultimoGrupo) gruposAgrupados.push(ultimoGrupo);
+                ultimoGrupo = { ...grupo };
+            }
+        }
+        if (ultimoGrupo) gruposAgrupados.push(ultimoGrupo);
+        
+        operatingHoursList.innerHTML = gruposAgrupados.map(g => {
+            const diasStr = g.dias.length > 1 ? `${g.dias[0]} a ${g.dias[g.dias.length - 1]}` : g.dias[0];
+            return `<p>${diasStr}: ${g.horario}</p>`;
+        }).join('');
+    }
+
+    // --- LÓGICA PRINCIPAL ---
     async function carregarPagina() {
         try {
             const statusRes = await fetch(`${backendUrl}/api/loja/status`);
@@ -192,13 +250,16 @@
             const dataStatus = await statusRes.json();
             
             lojaEstaAberta = dataStatus.status === 'aberto';
-            mensagemLojaFechada = dataStatus.mensagem; // Salva a mensagem para usar no alerta
+            mensagemLojaFechada = dataStatus.mensagem; 
 
-            // Atualiza o banner de status
             storeStatusBanner.textContent = dataStatus.mensagem;
             storeStatusBanner.className = lojaEstaAberta ? 'aberta' : 'fechada';
             
-            // Carrega o cardápio independentemente do status, para o cliente poder visualizar
+            // --- NOVA CHAMADA PARA EXIBIR HORÁRIOS ---
+            if(dataStatus.horarios) {
+                formatarHorarios(dataStatus.horarios);
+            }
+
             const [produtosRes, combosRes] = await Promise.all([
                 fetch(`${backendUrl}/api/cardapio`),
                 fetch(`${backendUrl}/api/combos`)
@@ -218,14 +279,11 @@
         }
     }
 
-    // --- NOVA FUNÇÃO PARA LIDAR COM CLIQUES NOS PRODUTOS ---
     function handleProductClick(tipo, id) {
         if (!lojaEstaAberta) {
             alert(mensagemLojaFechada);
             return;
         }
-
-        // Se a loja estiver aberta, procede normalmente
         if (tipo === 'combo') {
             abrirModalCombo(id);
         } else {
@@ -233,6 +291,8 @@
         }
     }
 
+    // O restante do seu código JavaScript permanece o mesmo...
+    // [ renderizarCardapio, modals, carrinho, etc. ]
     function renderizarCardapio() {
         productList.innerHTML = '';
         const itensParaRenderizar = [
@@ -248,7 +308,6 @@
             let isEsgotado = false;
             let buttonText = '';
             
-            // O onclick agora chama a nova função handleProductClick
             let onclickAction = `handleProductClick('${item.tipo}', ${item.id})`;
 
             if (item.tipo === 'combo') {
