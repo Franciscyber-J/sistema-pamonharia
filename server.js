@@ -361,6 +361,12 @@ app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
 });
 
 app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
+    // --- LOGS DE DEPURAÇÃO ---
+    console.log('--- ROTA DE CRIAR COMBO ---');
+    console.log('req.file:', req.file);
+    console.log('req.body:', req.body);
+    // --- FIM DOS LOGS ---
+    
     if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
     const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
     if (!req.file) return res.status(400).json({ error: "A imagem para o combo é obrigatória." });
@@ -390,6 +396,13 @@ app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imag
 
 app.put('/api/dashboard/combos/:id', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     const { id } = req.params;
+
+    // --- LOGS DE DEPURAÇÃO ---
+    console.log(`--- ROTA DE EDITAR COMBO ID: ${id} ---`);
+    console.log('req.file:', req.file);
+    console.log('req.body:', req.body);
+    // --- FIM DOS LOGS ---
+
     if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
     const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
     let imagem_url;
