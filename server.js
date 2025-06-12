@@ -335,81 +335,45 @@ app.post('/pedido', protegerRota, async (req, res) => {
 
 
 // =================================================================================================
-// --- NOVAS ROTAS DA API PARA GERENCIAR COMBOS ---
+// --- ROTAS DA API PARA GERENCIAR COMBOS ---
 // =================================================================================================
 
-// Rota pública para o cardápio buscar os combos ativos
 app.get('/api/combos', async (req, res) => {
     try {
         const sql = `
-            SELECT 
-                c.*,
-                COALESCE(
-                    (SELECT json_agg(rc.*)
-                     FROM regras_combo rc WHERE rc.combo_id = c.id),
-                    '[]'::json
-                ) as regras
-            FROM combos c
-            WHERE c.ativo = true
-            ORDER BY c.id;
+            SELECT c.*, COALESCE((SELECT json_agg(rc.*) FROM regras_combo rc WHERE rc.combo_id = c.id), '[]'::json) as regras
+            FROM combos c WHERE c.ativo = true ORDER BY c.id;
         `;
         const { rows } = await db.query(sql);
         res.json({ data: rows });
-    } catch (err) {
-        console.error("Erro ao buscar combos:", err);
-        res.status(500).json({ error: "Erro ao buscar combos." });
-    }
+    } catch (err) { res.status(500).json({ error: "Erro ao buscar combos." }); }
 });
 
-// Rota protegida para o dashboard buscar todos os combos
 app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
     try {
         const sql = `
-            SELECT 
-                c.*,
-                COALESCE(
-                    (SELECT json_agg(rc.*)
-                     FROM regras_combo rc WHERE rc.combo_id = c.id),
-                    '[]'::json
-                ) as regras
-            FROM combos c
-            ORDER BY c.id;
+            SELECT c.*, COALESCE((SELECT json_agg(rc.*) FROM regras_combo rc WHERE rc.combo_id = c.id), '[]'::json) as regras
+            FROM combos c ORDER BY c.id;
         `;
         const { rows } = await db.query(sql);
         res.json({ data: rows });
-    } catch (err) {
-        console.error("Erro ao buscar combos para o dashboard:", err);
-        res.status(500).json({ error: "Erro ao buscar combos." });
-    }
+    } catch (err) { res.status(500).json({ error: "Erro ao buscar combos para o dashboard." }); }
 });
 
-// Rota para criar um novo combo
 app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
-    // Quando se envia FormData com imagem, os outros dados vêm como string
+    if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
     const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
-    
-    if (!req.file) {
-        return res.status(400).json({ error: "A imagem para o combo é obrigatória." });
-    }
+    if (!req.file) return res.status(400).json({ error: "A imagem para o combo é obrigatória." });
     const imagem_url = req.file.path;
     const client = await db.pool.connect();
-
     try {
         await client.query('BEGIN');
-        const comboSql = `
-            INSERT INTO combos (nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, imagem_url)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id;
-        `;
+        const comboSql = `INSERT INTO combos (nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, imagem_url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id;`;
         const comboResult = await client.query(comboSql, [nome, descricao, parseFloat(preco_base), parseInt(quantidade_itens_obrigatoria), ativo, imagem_url]);
         const comboId = comboResult.rows[0].id;
-
         if (regras && regras.length > 0) {
             for (const regra of regras) {
-                const regraSql = `
-                    INSERT INTO regras_combo (combo_id, setor_id_alvo, produto_base_id_alvo, upcharge)
-                    VALUES ($1, $2, $3, $4);
-                `;
+                const regraSql = `INSERT INTO regras_combo (combo_id, setor_id_alvo, produto_base_id_alvo, upcharge) VALUES ($1, $2, $3, $4);`;
                 await client.query(regraSql, [comboId, regra.setor_id_alvo || null, regra.produto_base_id_alvo || null, parseFloat(regra.upcharge) || 0]);
             }
         }
@@ -424,15 +388,12 @@ app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imag
     }
 });
 
-// Rota para atualizar um combo existente
 app.put('/api/dashboard/combos/:id', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     const { id } = req.params;
+    if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
     const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
     let imagem_url;
-    if (req.file) {
-        imagem_url = req.file.path;
-    }
-
+    if (req.file) { imagem_url = req.file.path; }
     const client = await db.pool.connect();
     try {
         await client.query('BEGIN');
@@ -446,15 +407,10 @@ app.put('/api/dashboard/combos/:id', protegerRota, apenasAdmin, upload.single('i
         comboSql += ` WHERE id = $${paramCount}`;
         params.push(id);
         await client.query(comboSql, params);
-
         await client.query('DELETE FROM regras_combo WHERE combo_id = $1', [id]);
-
         if (regras && regras.length > 0) {
             for (const regra of regras) {
-                const regraSql = `
-                    INSERT INTO regras_combo (combo_id, setor_id_alvo, produto_base_id_alvo, upcharge)
-                    VALUES ($1, $2, $3, $4);
-                `;
+                const regraSql = `INSERT INTO regras_combo (combo_id, setor_id_alvo, produto_base_id_alvo, upcharge) VALUES ($1, $2, $3, $4);`;
                 await client.query(regraSql, [id, regra.setor_id_alvo || null, regra.produto_base_id_alvo || null, parseFloat(regra.upcharge) || 0]);
             }
         }
@@ -469,15 +425,11 @@ app.put('/api/dashboard/combos/:id', protegerRota, apenasAdmin, upload.single('i
     }
 });
 
-// Rota para apagar um combo
 app.delete('/api/dashboard/combos/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query('DELETE FROM combos WHERE id = $1', [req.params.id]);
         res.json({ message: 'Combo excluído com sucesso.' });
-    } catch (err) {
-        console.error("Erro ao deletar combo:", err);
-        res.status(500).json({ error: 'Falha ao excluir o combo.' });
-    }
+    } catch (err) { res.status(500).json({ error: 'Falha ao excluir o combo.' }); }
 });
 
 

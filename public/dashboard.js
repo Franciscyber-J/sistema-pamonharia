@@ -3,13 +3,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const backendUrl = 'https://pamonharia-servidor.onrender.com';
     let cache = { produtos: [], setores: [], combos: [] };
     let sortable = null;
-    let regrasTemporarias = []; // Armazena as regras do combo sendo editado
+    let regrasTemporarias = [];
 
-    // Elementos do DOM
+    // --- ELEMENTOS DO DOM ---
     const loginContainer = document.getElementById('login-container');
     const dashboardContainer = document.getElementById('dashboard-container');
     const loginForm = document.getElementById('form-login');
-    const loginError = document.getElementById('login-error');
     const btnLogout = document.getElementById('btn-logout');
     const btnAddProdutoBase = document.getElementById('btn-add-produto-base');
     const btnAddCombo = document.getElementById('btn-add-combo');
@@ -17,18 +16,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const gerenciadorProdutos = document.getElementById('gerenciador-produtos');
     const gerenciadorCombos = document.getElementById('gerenciador-combos');
     
-    // --- LÓGICA PRINCIPAL E INICIALIZAÇÃO ---
-    
-    function verificarSessao() {
-        const token = localStorage.getItem('authToken');
-        if (token) {
-            mostrarDashboard();
-            carregarTudo();
-        } else {
-            mostrarLogin();
-        }
+    // --- FUNÇÃO DE INICIALIZAÇÃO PRINCIPAL ---
+    function init() {
+        verificarSessao();
+        setupEventListeners();
     }
 
+    // --- LÓGICA DE CARREGAMENTO DE DADOS ---
     async function carregarTudo() {
         try {
             mostrarToast('Carregando dados...', 'info');
@@ -53,8 +47,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- SETUP DE EVENTOS ---
     function setupEventListeners() {
-        // Autenticação
         loginForm.addEventListener('submit', handleLogin);
         btnLogout.addEventListener('click', handleLogout);
         document.getElementById('toggle-senha').addEventListener('click', () => {
@@ -67,44 +61,37 @@ document.addEventListener('DOMContentLoaded', () => {
              eyeClosed.style.display = isPassword ? 'block' : 'none';
         });
 
-        // Abas e Modais
         setupTabs();
         document.querySelectorAll('.btn-modal-cancel').forEach(btn => btn.addEventListener('click', fecharModais));
         
-        // Botões de Adicionar
         btnAddProdutoBase.addEventListener('click', () => abrirModalProdutoBase());
         btnAddCombo.addEventListener('click', () => abrirModalCombo());
 
-        // Eventos delegados para listas
         gerenciadorProdutos.addEventListener('click', handleAcoesProdutos);
         gerenciadorCombos.addEventListener('click', handleAcoesCombos);
         globalActionsMenu.addEventListener('click', handleMenuAcoesClick);
         document.getElementById('lista-setores').addEventListener('click', handleAcoesSetor);
 
-
-        // Forms
         document.getElementById('form-produto-base').addEventListener('submit', handleFormProdutoSubmit);
         document.getElementById('form-variacao').addEventListener('submit', handleFormVariacaoSubmit);
         document.getElementById('form-setor').addEventListener('submit', handleFormSetorSubmit);
         document.getElementById('form-combo').addEventListener('submit', handleFormComboSubmit);
 
-        // Eventos do modal de combo
         document.getElementById('btn-add-regra').addEventListener('click', adicionarRegra);
         document.getElementById('regra-tipo').addEventListener('change', toggleRegraInputs);
         document.getElementById('regras-container').addEventListener('click', handleAcaoRegra);
 
-        // Fechar menu de ações global
          document.addEventListener('click', (e) => {
             if (!e.target.closest('.actions-menu-btn') && !e.target.closest('#global-actions-menu')) {
                 fecharMenuAcoes();
             }
         });
     }
-
+    
     // --- LÓGICA DE AUTENTICAÇÃO E SESSÃO ---
     async function handleLogin(event) {
         event.preventDefault();
-        loginError.textContent = '';
+        document.getElementById('login-error').textContent = '';
         const email = document.getElementById('login-email').value;
         const senha = document.getElementById('login-senha').value;
         try {
@@ -120,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
             mostrarDashboard();
             await carregarTudo();
         } catch (error) {
-            loginError.textContent = error.message;
+            document.getElementById('login-error').textContent = error.message;
         }
     }
 
@@ -146,16 +133,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const usuario = JSON.parse(usuarioString);
         const elementosAdmin = document.querySelectorAll('[data-admin-only]');
         const isOperador = usuario.cargo === 'operador';
-
         if (sortable) sortable.option("disabled", isOperador);
-        
         elementosAdmin.forEach(el => {
-            el.style.display = isOperador ? 'none' : (el.tagName === 'BUTTON' ? 'inline-block' : 'block');
-             if (el.classList.contains('tab-button') && !isOperador) {
-                el.style.display = 'inline-block';
-            }
+            el.style.display = isOperador ? 'none' : '';
         });
-        
         document.querySelectorAll('.produto-header').forEach(el => {
             el.style.cursor = isOperador ? 'default' : 'grab';
         });
@@ -174,9 +155,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return response;
     }
     
-    // --- LÓGICA DE RENDERIZAÇÃO ---
+    // --- LÓGICA DE RENDERIZAÇÃO (CRIAR HTML) ---
     function renderizarGerenciadorProdutos() {
-        //...código inalterado...
         gerenciadorProdutos.innerHTML = ''; 
         cache.produtos.forEach(pb => {
             const cardDiv = document.createElement('div');
@@ -207,7 +187,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderizarLinhasVariacoes(produtoBase) {
-        //...código inalterado...
         if (!produtoBase.variacoes || produtoBase.variacoes.length === 0) {
             return '<tr><td colspan="4" style="text-align:center; padding: 20px;">Nenhuma variação cadastrada.</td></tr>';
         }
@@ -231,7 +210,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function renderizarGerenciadorSetores() {
-        // ...código inalterado...
         const containerSetores = document.getElementById('Setores');
         containerSetores.innerHTML = `<div class="form-section"><h2>Gerenciar Setores</h2><form id="form-setor"><input type="hidden" id="setor-id"><label for="nome-setor">Nome do Setor:</label><input type="text" id="nome-setor" placeholder="Ex: Pamonhas, Bebidas, Doces" required><div class="form-buttons"><button type="submit" class="save-btn">Salvar Setor</button><button type="button" class="cancel-btn" id="btn-limpar-form-setor">Limpar</button></div></form><h3>Setores Existentes:</h3><ul id="lista-setores"></ul></div>`;
         const listaUl = document.getElementById('lista-setores');
@@ -246,8 +224,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderizarGerenciadorCombos() {
-        // NOVA FUNÇÃO
         gerenciadorCombos.innerHTML = '';
+        if (!cache.combos) return;
         cache.combos.forEach(combo => {
             const statusClass = combo.ativo ? 'status-ativo' : 'status-inativo';
             const cardDiv = document.createElement('div');
@@ -270,7 +248,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderizarRegrasCombo() {
-        // NOVA FUNÇÃO
         const container = document.getElementById('regras-container');
         container.innerHTML = '<h4>Regras Atuais:</h4>';
         if (regrasTemporarias.length === 0) {
@@ -282,10 +259,10 @@ document.addEventListener('DOMContentLoaded', () => {
         regrasTemporarias.forEach((regra, index) => {
             let nomeAlvo = '';
             if (regra.setor_id_alvo) {
-                const setor = cache.setores.find(s => s.id === regra.setor_id_alvo);
+                const setor = cache.setores.find(s => s.id == regra.setor_id_alvo);
                 nomeAlvo = `Setor: ${setor ? setor.nome : 'Desconhecido'}`;
             } else if (regra.produto_base_id_alvo) {
-                const produto = cache.produtos.find(p => p.id === regra.produto_base_id_alvo);
+                const produto = cache.produtos.find(p => p.id == regra.produto_base_id_alvo);
                 nomeAlvo = `Produto: ${produto ? produto.nome : 'Desconhecido'}`;
             }
             const upchargeTexto = regra.upcharge > 0 ? ` (Acréscimo: R$ ${Number(regra.upcharge).toFixed(2).replace('.',',')})` : '';
@@ -300,49 +277,46 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // --- LÓGICA DOS MODAIS E FORMULÁRIOS ---
-
     function abrirModalProdutoBase(id = null) {
         const form = document.getElementById('form-produto-base');
-        const title = document.getElementById('form-pb-title');
         const dropdownSetores = document.getElementById('pb-setor');
         dropdownSetores.innerHTML = cache.setores.map(s => `<option value="${s.id}">${s.nome}</option>`).join('');
         form.reset();
         document.getElementById('pb-id').value = '';
         if (id) {
             const pb = cache.produtos.find(p => p.id === id);
-            title.innerText = 'Editando Produto Base';
+            document.getElementById('form-pb-title').innerText = 'Editando Produto Base';
             document.getElementById('pb-id').value = pb.id;
             document.getElementById('pb-nome').value = pb.nome;
             document.getElementById('pb-descricao').value = pb.descricao;
             document.getElementById('pb-setor').value = pb.setor_id;
         } else {
-            title.innerText = 'Cadastrar Novo Produto Base';
+            document.getElementById('form-pb-title').innerText = 'Cadastrar Novo Produto Base';
         }
         document.getElementById('modal-produto-base').style.display = 'flex';
     }
 
     function abrirModalVariacao(id = null, produtoBaseId) {
         const form = document.getElementById('form-variacao');
-        const title = document.getElementById('form-v-title');
         form.reset();
         document.getElementById('v-id').value = '';
         document.getElementById('v-pb-id').value = produtoBaseId;
         if (id) {
             const pb = cache.produtos.find(p => p.id === produtoBaseId);
             const variacao = pb.variacoes.find(v => v.id === id);
-            title.innerText = 'Editando Variação';
+            document.getElementById('form-v-title').innerText = 'Editando Variação';
             document.getElementById('v-id').value = variacao.id;
             document.getElementById('v-nome').value = variacao.nome;
             document.getElementById('v-preco').value = variacao.preco;
         } else {
             const pb = cache.produtos.find(p => p.id === produtoBaseId);
-            title.innerText = `Adicionar Variação para: ${pb.nome}`;
+            document.getElementById('form-v-title').innerText = `Adicionar Variação para: ${pb.nome}`;
         }
         document.getElementById('modal-variacao').style.display = 'flex';
     }
 
     function abrirModalCombo(id = null) {
-        // NOVA FUNÇÃO
+        regrasTemporarias = []; // Limpa o estado anterior
         const form = document.getElementById('form-combo');
         form.reset();
         document.getElementById('combo-id').value = '';
@@ -360,8 +334,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('combo-descricao').value = combo.descricao;
             document.getElementById('combo-preco').value = combo.preco_base;
             document.getElementById('combo-qtd-itens').value = combo.quantidade_itens_obrigatoria;
-            document.getElementById('combo-ativo').value = combo.ativo;
-            regrasTemporarias = combo.regras ? [...combo.regras] : [];
+            document.getElementById('combo-ativo').value = String(combo.ativo);
+            regrasTemporarias = combo.regras ? JSON.parse(JSON.stringify(combo.regras)) : [];
         } else {
             document.getElementById('form-combo-title').innerText = 'Criar Novo Combo';
             regrasTemporarias = [];
@@ -376,11 +350,6 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault(); 
         const id = document.getElementById('pb-id').value;
         const formData = new FormData(e.target);
-        // Adiciona campos que não estão no form diretamente
-        formData.append('nome', document.getElementById('pb-nome').value);
-        formData.append('descricao', document.getElementById('pb-descricao').value);
-        formData.append('setor_id', document.getElementById('pb-setor').value);
-        
         const method = id ? 'PUT' : 'POST'; 
         const url = id ? `${backendUrl}/produtos_base/${id}` : `${backendUrl}/produtos_base`; 
         try { 
@@ -416,22 +385,18 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const id = document.getElementById('setor-id').value;
         const nome = document.getElementById('nome-setor').value;
-        if (!nome) return alert('O nome do setor não pode ser vazio.');
+        if (!nome) return;
         const method = id ? 'PUT' : 'POST';
         const url = id ? `${backendUrl}/setores/${id}` : `${backendUrl}/setores`;
         try {
-            const response = await fetchProtegido(url, { method, body: JSON.stringify({ nome }) });
-            if (!response.ok) throw new Error((await response.json()).error);
+            await fetchProtegido(url, { method, body: JSON.stringify({ nome }) });
             document.getElementById('form-setor').reset();
             document.getElementById('setor-id').value = '';
             await carregarTudo();
-        } catch(error) {
-            mostrarToast(`Erro: ${error.message}`, 'erro');
-        }
+        } catch(error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
     }
 
     async function handleFormComboSubmit(e) {
-        // NOVA FUNÇÃO
         e.preventDefault();
         const id = document.getElementById('combo-id').value;
         const dados = {
@@ -455,19 +420,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const response = await fetchProtegido(url, { method, body: formData });
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error || 'Erro desconhecido');
-            }
+            if (!response.ok) throw new Error((await response.json()).error);
             fecharModais();
             await carregarTudo();
             mostrarToast(`Combo ${id ? 'atualizado' : 'criado'} com sucesso!`, 'sucesso');
         } catch (error) {
-            mostrarToast(`Erro: ${error.message}`, 'erro');
+            mostrarToast(`Erro ao salvar combo: ${error.message}`, 'erro');
         }
     }
 
-    // --- FUNÇÕES DE EVENTOS (AÇÕES) ---
+    // --- LÓGICA DE EVENTOS (AÇÕES) ---
     function handleAcoesProdutos(e) {
         const target = e.target;
         const button = target.closest('button');
@@ -475,8 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const action = button ? button.dataset.action : (header && !target.closest('.actions-cell') ? 'toggle-variacoes' : null);
         if (!action) return;
         if (action === 'toggle-actions-menu') {
-            abrirMenuAcoes(button, 'produto');
-            return;
+            abrirMenuAcoes(button); return;
         }
         if(action !== 'toggle-variacoes') { fecharMenuAcoes(); }
         const id = parseInt(button?.dataset.id || header?.dataset.id);
@@ -491,7 +452,6 @@ document.addEventListener('DOMContentLoaded', () => {
             'salvar-estoque': async () => {
                 const input = document.getElementById(`estoque-v-${id}`);
                 const quantidade = input.value;
-                if (quantidade === '' || parseInt(quantidade) < 0) return mostrarToast('Insira um valor de estoque válido.', 'erro');
                 try {
                     await fetchProtegido(`${backendUrl}/variacao/estoque`, { method: 'POST', body: JSON.stringify({ id, quantidade: parseInt(quantidade) }) });
                     mostrarToast('Estoque atualizado!', 'sucesso');
@@ -512,18 +472,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function handleAcoesCombos(e) {
-        // NOVA FUNÇÃO
         const button = e.target.closest('button');
         const header = e.target.closest('.produto-header');
         if (!button && !header) return;
         const id = parseInt(button?.dataset.id || header?.dataset.id);
         let action = button?.dataset.action;
-        if (!action && header && !e.target.closest('.actions-cell')) {
-            action = 'editar-combo';
-        }
+        if (!action && header && !e.target.closest('.actions-cell')) { action = 'editar-combo'; }
         if (!action) return;
         if (action === 'toggle-actions-menu') {
-            abrirMenuAcoes(button, 'combo');
+            abrirMenuAcoes(button);
         } else if (action === 'editar-combo') {
             abrirModalCombo(id);
         }
@@ -541,7 +498,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('nome-setor').focus();
         } else if (action === 'excluir-setor') {
              if (!confirm(`Tem certeza que deseja excluir o setor "${nome}"?`)) return;
-             fetchProtegido(`${backendUrl}/setores/${id}`, { method: 'DELETE' }).then(carregarTudo);
+             fetchProtegido(`${backendUrl}/setores/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
         }
     }
 
@@ -551,21 +508,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const { action, id, pbId, nome } = button.dataset;
         const actions = {
             'editar-produto_base': () => abrirModalProdutoBase(parseInt(id)),
-            'duplicar-produto_base': () => fetchProtegido(`${backendUrl}/produtos_base/${id}/duplicar`, { method: 'POST' }).then(carregarTudo),
+            'duplicar-produto_base': () => fetchProtegido(`${backendUrl}/produtos_base/${id}/duplicar`, { method: 'POST' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro')),
             'excluir-produto_base': () => {
                 if(confirm(`Excluir "${nome}" e todas as suas variações?`)) 
-                fetchProtegido(`${backendUrl}/produtos_base/${id}`, { method: 'DELETE' }).then(carregarTudo);
+                fetchProtegido(`${backendUrl}/produtos_base/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
             },
             'editar-variacao': () => abrirModalVariacao(parseInt(id), parseInt(pbId)),
-            'duplicar-variacao': () => fetchProtegido(`${backendUrl}/variacoes/${id}/duplicar`, { method: 'POST' }).then(carregarTudo),
+            'duplicar-variacao': () => fetchProtegido(`${backendUrl}/variacoes/${id}/duplicar`, { method: 'POST' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro')),
             'excluir-variacao': () => {
                 if(confirm(`Excluir a variação "${nome}"?`))
-                fetchProtegido(`${backendUrl}/variacoes/${id}`, { method: 'DELETE' }).then(carregarTudo);
+                fetchProtegido(`${backendUrl}/variacoes/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
             },
             'editar-combo': () => abrirModalCombo(parseInt(id)),
             'excluir-combo': () => {
                  if(confirm(`Excluir o combo "${nome}"?`))
-                 fetchProtegido(`${backendUrl}/api/dashboard/combos/${id}`, { method: 'DELETE' }).then(carregarTudo);
+                 fetchProtegido(`${backendUrl}/api/dashboard/combos/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
             }
         };
         if (actions[action]) {
@@ -575,7 +532,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function adicionarRegra() {
-        // NOVA FUNÇÃO
         const tipo = document.getElementById('regra-tipo').value;
         const upcharge = parseFloat(document.getElementById('regra-upcharge').value) || 0;
         let novaRegra = { upcharge };
@@ -589,7 +545,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handleAcaoRegra(e){
-        // NOVA FUNÇÃO
         const button = e.target.closest('button');
         if(!button || button.dataset.action !== 'remover-regra') return;
         const index = parseInt(button.dataset.index);
@@ -598,15 +553,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function toggleRegraInputs(){
-        // NOVA FUNÇÃO
         const tipo = document.getElementById('regra-tipo').value;
         document.getElementById('group-regra-setor').style.display = tipo === 'setor' ? 'block' : 'none';
         document.getElementById('group-regra-produto').style.display = tipo === 'produto' ? 'block' : 'none';
     }
 
-
     // --- FUNÇÕES UTILITÁRIAS ---
     function fecharModais() {
+        regrasTemporarias = []; // Limpa o estado das regras ao fechar qualquer modal
         document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
     }
     function mostrarToast(mensagem, tipo = 'sucesso') {
@@ -615,17 +569,12 @@ document.addEventListener('DOMContentLoaded', () => {
         toast.classList.add(tipo, 'show');
         setTimeout(() => { toast.classList.remove('show');}, 3000);
     }
-    function gerarSlug(texto) {
-        return texto.toString().toLowerCase().trim()
-            .replace(/\s+/g, '-')
-            .replace(/[^\w\-]+/g, '')
-            .replace(/\-\-+/g, '-');
-    }
     function setupTabs() {
         const tabButtons = document.querySelectorAll('.tab-button');
         const tabContents = document.querySelectorAll('.tab-content');
         tabButtons.forEach(button => {
-            button.addEventListener('click', () => {
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
                 const targetTabId = button.dataset.tab;
                 tabButtons.forEach(btn => btn.classList.remove('active'));
                 tabContents.forEach(content => content.classList.remove('active'));
@@ -633,8 +582,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById(targetTabId).classList.add('active');
             });
         });
-        // Ativa a primeira aba por padrão
-        document.querySelector('.tab-button').click();
+        if(document.querySelector('.tab-button.active')) {
+            document.querySelector('.tab-button.active').click();
+        } else {
+            document.querySelector('.tab-button').click();
+        }
     }
     function inicializarDragAndDrop() {
         const container = document.getElementById('gerenciador-produtos');
@@ -650,7 +602,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-     function abrirMenuAcoes(targetButton, typePrefix) {
+     function abrirMenuAcoes(targetButton) {
         const type = targetButton.dataset.type;
         const id = parseInt(targetButton.dataset.id);
         const pbId = parseInt(targetButton.dataset.pbId);
@@ -690,6 +642,5 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- INICIALIZAÇÃO ---
-    setupEventListeners();
-    verificarSessao();
+    init();
 });
