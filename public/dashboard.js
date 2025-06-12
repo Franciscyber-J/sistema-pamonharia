@@ -1,8 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- ELEMENTOS E VARIÁVEIS GLOBAIS ---
     const backendUrl = 'https://pamonharia-servidor.onrender.com';
-    let cache = { produtos: [], setores: [] };
+    let cache = { produtos: [], setores: [], combos: [] };
     let sortable = null;
+    let regrasTemporarias = []; // Armazena as regras do combo sendo editado
 
     // Elementos do DOM
     const loginContainer = document.getElementById('login-container');
@@ -10,20 +11,102 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginForm = document.getElementById('form-login');
     const loginError = document.getElementById('login-error');
     const btnLogout = document.getElementById('btn-logout');
-    const toggleSenhaBtn = document.getElementById('toggle-senha');
-    const loginSenhaInput = document.getElementById('login-senha');
-    const eyeOpenIcon = document.getElementById('eye-open');
-    const eyeClosedIcon = document.getElementById('eye-closed');
+    const btnAddProdutoBase = document.getElementById('btn-add-produto-base');
+    const btnAddCombo = document.getElementById('btn-add-combo');
     const globalActionsMenu = document.getElementById('global-actions-menu');
     const gerenciadorProdutos = document.getElementById('gerenciador-produtos');
-    const btnAddProdutoBase = document.getElementById('btn-add-produto-base'); // <<-- Adicionado
+    const gerenciadorCombos = document.getElementById('gerenciador-combos');
+    
+    // --- LÓGICA PRINCIPAL E INICIALIZAÇÃO ---
+    
+    function verificarSessao() {
+        const token = localStorage.getItem('authToken');
+        if (token) {
+            mostrarDashboard();
+            carregarTudo();
+        } else {
+            mostrarLogin();
+        }
+    }
+
+    async function carregarTudo() {
+        try {
+            mostrarToast('Carregando dados...', 'info');
+            const [setoresRes, produtosRes, combosRes] = await Promise.all([
+                fetchProtegido(`${backendUrl}/setores`),
+                fetchProtegido(`${backendUrl}/dashboard/produtos`),
+                fetchProtegido(`${backendUrl}/api/dashboard/combos`)
+            ]);
+            cache.setores = (await setoresRes.json()).data;
+            cache.produtos = (await produtosRes.json()).data;
+            cache.combos = (await combosRes.json()).data;
+            
+            renderizarGerenciadorProdutos();
+            renderizarGerenciadorSetores();
+            renderizarGerenciadorCombos();
+
+            inicializarDragAndDrop();
+            aplicarPermissoes();
+        } catch (err) {
+            mostrarToast(err.message, 'erro');
+            console.error(err);
+        }
+    }
+
+    function setupEventListeners() {
+        // Autenticação
+        loginForm.addEventListener('submit', handleLogin);
+        btnLogout.addEventListener('click', handleLogout);
+        document.getElementById('toggle-senha').addEventListener('click', () => {
+             const input = document.getElementById('login-senha');
+             const eyeOpen = document.getElementById('eye-open');
+             const eyeClosed = document.getElementById('eye-closed');
+             const isPassword = input.type === 'password';
+             input.type = isPassword ? 'text' : 'password';
+             eyeOpen.style.display = isPassword ? 'none' : 'block';
+             eyeClosed.style.display = isPassword ? 'block' : 'none';
+        });
+
+        // Abas e Modais
+        setupTabs();
+        document.querySelectorAll('.btn-modal-cancel').forEach(btn => btn.addEventListener('click', fecharModais));
+        
+        // Botões de Adicionar
+        btnAddProdutoBase.addEventListener('click', () => abrirModalProdutoBase());
+        btnAddCombo.addEventListener('click', () => abrirModalCombo());
+
+        // Eventos delegados para listas
+        gerenciadorProdutos.addEventListener('click', handleAcoesProdutos);
+        gerenciadorCombos.addEventListener('click', handleAcoesCombos);
+        globalActionsMenu.addEventListener('click', handleMenuAcoesClick);
+        document.getElementById('lista-setores').addEventListener('click', handleAcoesSetor);
+
+
+        // Forms
+        document.getElementById('form-produto-base').addEventListener('submit', handleFormProdutoSubmit);
+        document.getElementById('form-variacao').addEventListener('submit', handleFormVariacaoSubmit);
+        document.getElementById('form-setor').addEventListener('submit', handleFormSetorSubmit);
+        document.getElementById('form-combo').addEventListener('submit', handleFormComboSubmit);
+
+        // Eventos do modal de combo
+        document.getElementById('btn-add-regra').addEventListener('click', adicionarRegra);
+        document.getElementById('regra-tipo').addEventListener('change', toggleRegraInputs);
+        document.getElementById('regras-container').addEventListener('click', handleAcaoRegra);
+
+        // Fechar menu de ações global
+         document.addEventListener('click', (e) => {
+            if (!e.target.closest('.actions-menu-btn') && !e.target.closest('#global-actions-menu')) {
+                fecharMenuAcoes();
+            }
+        });
+    }
 
     // --- LÓGICA DE AUTENTICAÇÃO E SESSÃO ---
     async function handleLogin(event) {
         event.preventDefault();
         loginError.textContent = '';
         const email = document.getElementById('login-email').value;
-        const senha = loginSenhaInput.value;
+        const senha = document.getElementById('login-senha').value;
         try {
             const response = await fetch(`${backendUrl}/login`, {
                 method: 'POST',
@@ -57,13 +140,6 @@ document.addEventListener('DOMContentLoaded', () => {
         dashboardContainer.style.display = 'none';
     }
 
-    function toggleVisibilidadeSenha() {
-        const isPassword = loginSenhaInput.type === 'password';
-        loginSenhaInput.type = isPassword ? 'text' : 'password';
-        eyeOpenIcon.style.display = isPassword ? 'none' : 'block';
-        eyeClosedIcon.style.display = isPassword ? 'block' : 'none';
-    }
-    
     function aplicarPermissoes() {
         const usuarioString = localStorage.getItem('usuario');
         if (!usuarioString) return;
@@ -74,9 +150,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (sortable) sortable.option("disabled", isOperador);
         
         elementosAdmin.forEach(el => {
-            el.style.display = isOperador ? 'none' : '';
+            el.style.display = isOperador ? 'none' : (el.tagName === 'BUTTON' ? 'inline-block' : 'block');
              if (el.classList.contains('tab-button') && !isOperador) {
-                el.style.display = 'flex';
+                el.style.display = 'inline-block';
             }
         });
         
@@ -98,119 +174,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return response;
     }
     
-    function verificarSessao() {
-        const token = localStorage.getItem('authToken');
-        if (token) {
-            mostrarDashboard();
-            carregarTudo();
-        } else {
-            mostrarLogin();
-        }
-    }
-    
-    function setupTabs() {
-        const tabButtons = document.querySelectorAll('.tab-button');
-        const tabContents = document.querySelectorAll('.tab-content');
-        tabButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                const targetTabId = button.dataset.tab;
-                tabButtons.forEach(btn => btn.classList.remove('active'));
-                tabContents.forEach(content => content.style.display = 'none');
-                button.classList.add('active');
-                document.getElementById(targetTabId).style.display = 'block';
-            });
-        });
-    }
-
-    function setupModalCancelButtons() {
-        const cancelButtons = document.querySelectorAll('.btn-modal-cancel');
-        cancelButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                fecharModais();
-            });
-        });
-    }
-
-    function mostrarToast(mensagem, tipo = 'sucesso') {
-        const toast = document.getElementById('toast-notification');
-        toast.textContent = mensagem;
-        toast.className = 'toast';
-        toast.classList.add(tipo, 'show');
-        setTimeout(() => {
-            toast.classList.remove('show');
-        }, 3000);
-    }
-
-    function fecharModais() {
-        document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
-    }
-
-    function gerarSlug(texto) {
-        if (!texto) return '';
-        const a = 'àáâäæãåāăąçćčđďèéêëēėęěğǵḧîïíīįìłḿñńǹňôöòóœøōõőṕŕřßśšşșťțûüùúūǘůűųẃẍÿýžźż·/_,:;'
-        const b = 'aaaaaaaaaacccddeeeeeeeegghiiiiiilmnnnnoooooooooprrssssssttuuuuuuuuuwxyyzzz------'
-        const p = new RegExp(a.split('').join('|'), 'g')
-        return texto.toString().toLowerCase()
-            .replace(/\s+/g, '-')
-            .replace(p, c => b.charAt(a.indexOf(c)))
-            .replace(/&/g, '-e-')
-            .replace(/[^\w\-]+/g, '')
-            .replace(/\-\-+/g, '-')
-            .replace(/^-+/, '')
-            .replace(/-+$/, '')
-    }
-
-    async function carregarTudo() {
-        try {
-            const [setoresRes, produtosRes] = await Promise.all([
-                fetchProtegido(`${backendUrl}/setores`),
-                fetchProtegido(`${backendUrl}/dashboard/produtos`)
-            ]);
-            cache.setores = (await setoresRes.json()).data;
-            cache.produtos = (await produtosRes.json()).data;
-            renderizarGerenciadorProdutos();
-            renderizarGerenciadorSetores();
-            inicializarDragAndDrop();
-            aplicarPermissoes();
-        } catch (err) {
-            mostrarToast(err.message, 'erro');
-            console.error(err);
-        }
-    }
-
-    function inicializarDragAndDrop() {
-        const container = document.getElementById('gerenciador-produtos');
-        if (sortable) sortable.destroy();
-        sortable = new Sortable(container, {
-            animation: 150,
-            ghostClass: 'sortable-ghost',
-            chosenClass: 'sortable-chosen',
-            handle: '.produto-header',
-            onEnd: async function (evt) {
-                const productCards = [...container.children];
-                const newOrder = productCards.map(card => card.dataset.produtoBaseId);
-                try {
-                    const response = await fetchProtegido(`${backendUrl}/dashboard/produtos/reordenar`, {
-                        method: 'POST',
-                        body: JSON.stringify({ order: newOrder })
-                    });
-                    if (!response.ok) throw new Error('Falha ao salvar a ordem no servidor.');
-                    mostrarToast('Ordem salva com sucesso!', 'sucesso');
-                } catch (error) {
-                    mostrarToast('Erro ao salvar nova ordem.', 'erro');
-                    carregarTudo(); 
-                }
-            }
-        });
-    }
-
+    // --- LÓGICA DE RENDERIZAÇÃO ---
     function renderizarGerenciadorProdutos() {
+        //...código inalterado...
         gerenciadorProdutos.innerHTML = ''; 
         cache.produtos.forEach(pb => {
             const cardDiv = document.createElement('div');
             cardDiv.className = 'produto-card';
-            cardDiv.dataset.produtoBaseId = pb.id; 
-    
+            cardDiv.dataset.produtoBaseId = pb.id;
             cardDiv.innerHTML = `
                 <div class="produto-header" data-id="${pb.id}">
                     <span class="produto-header-toggle">▶</span>
@@ -220,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <p>Setor: ${pb.setor_nome || 'Não definido'}</p>
                     </div>
                     <div class="actions-cell" data-admin-only>
-                        <button class="actions-menu-btn" data-action="toggle-actions-menu" data-type="base" data-id="${pb.id}" data-nome="${pb.nome}">⋮</button>
+                        <button class="actions-menu-btn" data-action="toggle-actions-menu" data-type="produto_base" data-id="${pb.id}" data-nome="${pb.nome}">⋮</button>
                     </div>
                 </div>
                 <div class="variacoes-container hidden" id="variacoes-pb-${pb.id}">
@@ -236,6 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderizarLinhasVariacoes(produtoBase) {
+        //...código inalterado...
         if (!produtoBase.variacoes || produtoBase.variacoes.length === 0) {
             return '<tr><td colspan="4" style="text-align:center; padding: 20px;">Nenhuma variação cadastrada.</td></tr>';
         }
@@ -259,6 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function renderizarGerenciadorSetores() {
+        // ...código inalterado...
         const containerSetores = document.getElementById('Setores');
         containerSetores.innerHTML = `<div class="form-section"><h2>Gerenciar Setores</h2><form id="form-setor"><input type="hidden" id="setor-id"><label for="nome-setor">Nome do Setor:</label><input type="text" id="nome-setor" placeholder="Ex: Pamonhas, Bebidas, Doces" required><div class="form-buttons"><button type="submit" class="save-btn">Salvar Setor</button><button type="button" class="cancel-btn" id="btn-limpar-form-setor">Limpar</button></div></form><h3>Setores Existentes:</h3><ul id="lista-setores"></ul></div>`;
         const listaUl = document.getElementById('lista-setores');
@@ -266,20 +239,73 @@ document.addEventListener('DOMContentLoaded', () => {
         cache.setores.forEach(setor => {
             listaUl.innerHTML += `<li><span>${setor.nome}</span><div class="actions-cell"><button class="edit-btn btn-sm" data-action="editar-setor" data-id="${setor.id}" data-nome="${setor.nome}">Editar</button><button class="delete-btn btn-sm" data-action="excluir-setor" data-id="${setor.id}" data-nome="${setor.nome}">Excluir</button></div></li>`;
         });
-        document.getElementById('form-setor').addEventListener('submit', handleFormSetorSubmit);
-        document.getElementById('lista-setores').addEventListener('click', handleAcoesSetor);
         document.getElementById('btn-limpar-form-setor').addEventListener('click', () => {
               document.getElementById('form-setor').reset();
               document.getElementById('setor-id').value = '';
         });
     }
 
+    function renderizarGerenciadorCombos() {
+        // NOVA FUNÇÃO
+        gerenciadorCombos.innerHTML = '';
+        cache.combos.forEach(combo => {
+            const statusClass = combo.ativo ? 'status-ativo' : 'status-inativo';
+            const cardDiv = document.createElement('div');
+            cardDiv.className = 'produto-card';
+            cardDiv.dataset.comboId = combo.id;
+            cardDiv.innerHTML = `
+                <div class="produto-header" data-id="${combo.id}" data-action="editar-combo">
+                     <img src="${combo.imagem_url}" alt="${combo.nome}" class="produto-header-imagem">
+                    <div class="produto-header-info">
+                        <h3>${combo.nome} <span class="status-dot ${statusClass}" title="${combo.ativo ? 'Ativo' : 'Inativo'}"></span></h3>
+                        <p>Preço Base: R$ ${Number(combo.preco_base).toFixed(2).replace('.',',')}</p>
+                    </div>
+                    <div class="actions-cell" data-admin-only>
+                        <button class="actions-menu-btn" data-action="toggle-actions-menu" data-type="combo" data-id="${combo.id}" data-nome="${combo.nome}">⋮</button>
+                    </div>
+                </div>
+            `;
+            gerenciadorCombos.appendChild(cardDiv);
+        });
+    }
+
+    function renderizarRegrasCombo() {
+        // NOVA FUNÇÃO
+        const container = document.getElementById('regras-container');
+        container.innerHTML = '<h4>Regras Atuais:</h4>';
+        if (regrasTemporarias.length === 0) {
+            container.innerHTML += '<p>Nenhuma regra adicionada.</p>';
+            return;
+        }
+        const lista = document.createElement('ul');
+        lista.className = 'regras-lista';
+        regrasTemporarias.forEach((regra, index) => {
+            let nomeAlvo = '';
+            if (regra.setor_id_alvo) {
+                const setor = cache.setores.find(s => s.id === regra.setor_id_alvo);
+                nomeAlvo = `Setor: ${setor ? setor.nome : 'Desconhecido'}`;
+            } else if (regra.produto_base_id_alvo) {
+                const produto = cache.produtos.find(p => p.id === regra.produto_base_id_alvo);
+                nomeAlvo = `Produto: ${produto ? produto.nome : 'Desconhecido'}`;
+            }
+            const upchargeTexto = regra.upcharge > 0 ? ` (Acréscimo: R$ ${Number(regra.upcharge).toFixed(2).replace('.',',')})` : '';
+            lista.innerHTML += `
+                <li>
+                    <span>${nomeAlvo}${upchargeTexto}</span>
+                    <button type="button" class="delete-btn btn-sm" data-action="remover-regra" data-index="${index}">Remover</button>
+                </li>
+            `;
+        });
+        container.appendChild(lista);
+    }
+    
+    // --- LÓGICA DOS MODAIS E FORMULÁRIOS ---
+
     function abrirModalProdutoBase(id = null) {
         const form = document.getElementById('form-produto-base');
         const title = document.getElementById('form-pb-title');
         const dropdownSetores = document.getElementById('pb-setor');
-        dropdownSetores.innerHTML = '';
-        cache.setores.forEach(s => dropdownSetores.innerHTML += `<option value="${s.id}">${s.nome}</option>`);
+        dropdownSetores.innerHTML = cache.setores.map(s => `<option value="${s.id}">${s.nome}</option>`).join('');
         form.reset();
         document.getElementById('pb-id').value = '';
         if (id) {
@@ -289,7 +315,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('pb-nome').value = pb.nome;
             document.getElementById('pb-descricao').value = pb.descricao;
             document.getElementById('pb-setor').value = pb.setor_id;
-            document.getElementById('pb-slug').value = pb.slug || gerarSlug(pb.nome);
         } else {
             title.innerText = 'Cadastrar Novo Produto Base';
         }
@@ -309,14 +334,84 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('v-id').value = variacao.id;
             document.getElementById('v-nome').value = variacao.nome;
             document.getElementById('v-preco').value = variacao.preco;
-            document.getElementById('v-slug').value = variacao.slug;
         } else {
             const pb = cache.produtos.find(p => p.id === produtoBaseId);
             title.innerText = `Adicionar Variação para: ${pb.nome}`;
         }
         document.getElementById('modal-variacao').style.display = 'flex';
     }
+
+    function abrirModalCombo(id = null) {
+        // NOVA FUNÇÃO
+        const form = document.getElementById('form-combo');
+        form.reset();
+        document.getElementById('combo-id').value = '';
+        
+        const setorSelect = document.getElementById('regra-setor-alvo');
+        const produtoSelect = document.getElementById('regra-produto-alvo');
+        setorSelect.innerHTML = cache.setores.map(s => `<option value="${s.id}">${s.nome}</option>`).join('');
+        produtoSelect.innerHTML = cache.produtos.map(p => `<option value="${p.id}">${p.nome}</option>`).join('');
+
+        if (id) {
+            const combo = cache.combos.find(c => c.id === id);
+            document.getElementById('form-combo-title').innerText = 'Editando Combo';
+            document.getElementById('combo-id').value = combo.id;
+            document.getElementById('combo-nome').value = combo.nome;
+            document.getElementById('combo-descricao').value = combo.descricao;
+            document.getElementById('combo-preco').value = combo.preco_base;
+            document.getElementById('combo-qtd-itens').value = combo.quantidade_itens_obrigatoria;
+            document.getElementById('combo-ativo').value = combo.ativo;
+            regrasTemporarias = combo.regras ? [...combo.regras] : [];
+        } else {
+            document.getElementById('form-combo-title').innerText = 'Criar Novo Combo';
+            regrasTemporarias = [];
+        }
+
+        renderizarRegrasCombo();
+        toggleRegraInputs();
+        document.getElementById('modal-combo').style.display = 'flex';
+    }
+
+    async function handleFormProdutoSubmit(e) {
+        e.preventDefault(); 
+        const id = document.getElementById('pb-id').value;
+        const formData = new FormData(e.target);
+        // Adiciona campos que não estão no form diretamente
+        formData.append('nome', document.getElementById('pb-nome').value);
+        formData.append('descricao', document.getElementById('pb-descricao').value);
+        formData.append('setor_id', document.getElementById('pb-setor').value);
+        
+        const method = id ? 'PUT' : 'POST'; 
+        const url = id ? `${backendUrl}/produtos_base/${id}` : `${backendUrl}/produtos_base`; 
+        try { 
+            const response = await fetchProtegido(url, { method, body: formData }); 
+            if (!response.ok) throw new Error((await response.json()).error); 
+            fecharModais(); 
+            await carregarTudo(); 
+            mostrarToast(`Produto base ${id ? 'atualizado' : 'criado'}!`, 'sucesso'); 
+        } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
+    }
     
+    async function handleFormVariacaoSubmit(e) {
+        e.preventDefault(); 
+        const id = document.getElementById('v-id').value;
+        const data = { 
+            produto_base_id: document.getElementById('v-pb-id').value, 
+            nome: document.getElementById('v-nome').value, 
+            preco: document.getElementById('v-preco').value, 
+            slug: gerarSlug(document.getElementById('v-nome').value) 
+        };
+        const method = id ? 'PUT' : 'POST'; 
+        const url = id ? `${backendUrl}/variacoes/${id}` : `${backendUrl}/variacoes`; 
+        try { 
+            const response = await fetchProtegido(url, { method, body: JSON.stringify(data) }); 
+            if (!response.ok) throw new Error((await response.json()).error); 
+            fecharModais(); 
+            await carregarTudo(); 
+            mostrarToast(`Variação ${id ? 'atualizada' : 'criada'}!`, 'sucesso'); 
+        } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
+    }
+
     async function handleFormSetorSubmit(e) {
         e.preventDefault();
         const id = document.getElementById('setor-id').value;
@@ -334,7 +429,106 @@ document.addEventListener('DOMContentLoaded', () => {
             mostrarToast(`Erro: ${error.message}`, 'erro');
         }
     }
+
+    async function handleFormComboSubmit(e) {
+        // NOVA FUNÇÃO
+        e.preventDefault();
+        const id = document.getElementById('combo-id').value;
+        const dados = {
+            nome: document.getElementById('combo-nome').value,
+            descricao: document.getElementById('combo-descricao').value,
+            preco_base: document.getElementById('combo-preco').value,
+            quantidade_itens_obrigatoria: document.getElementById('combo-qtd-itens').value,
+            ativo: document.getElementById('combo-ativo').value === 'true',
+            regras: regrasTemporarias,
+        };
+        const imagemFile = document.getElementById('combo-imagem').files[0];
+        
+        const formData = new FormData();
+        formData.append('dados', JSON.stringify(dados));
+        if (imagemFile) {
+            formData.append('imagem', imagemFile);
+        }
+
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `${backendUrl}/api/dashboard/combos/${id}` : `${backendUrl}/api/dashboard/combos`;
+
+        try {
+            const response = await fetchProtegido(url, { method, body: formData });
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'Erro desconhecido');
+            }
+            fecharModais();
+            await carregarTudo();
+            mostrarToast(`Combo ${id ? 'atualizado' : 'criado'} com sucesso!`, 'sucesso');
+        } catch (error) {
+            mostrarToast(`Erro: ${error.message}`, 'erro');
+        }
+    }
+
+    // --- FUNÇÕES DE EVENTOS (AÇÕES) ---
+    function handleAcoesProdutos(e) {
+        const target = e.target;
+        const button = target.closest('button');
+        const header = target.closest('.produto-header');
+        const action = button ? button.dataset.action : (header && !target.closest('.actions-cell') ? 'toggle-variacoes' : null);
+        if (!action) return;
+        if (action === 'toggle-actions-menu') {
+            abrirMenuAcoes(button, 'produto');
+            return;
+        }
+        if(action !== 'toggle-variacoes') { fecharMenuAcoes(); }
+        const id = parseInt(button?.dataset.id || header?.dataset.id);
+        const allActions = {
+            'toggle-variacoes': () => {
+                const container = document.getElementById(`variacoes-pb-${id}`);
+                const toggleIcon = header.querySelector('.produto-header-toggle');
+                container.classList.toggle('hidden');
+                toggleIcon.style.transform = container.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(90deg)';
+            },
+            'adicionar-variacao': () => abrirModalVariacao(null, id),
+            'salvar-estoque': async () => {
+                const input = document.getElementById(`estoque-v-${id}`);
+                const quantidade = input.value;
+                if (quantidade === '' || parseInt(quantidade) < 0) return mostrarToast('Insira um valor de estoque válido.', 'erro');
+                try {
+                    await fetchProtegido(`${backendUrl}/variacao/estoque`, { method: 'POST', body: JSON.stringify({ id, quantidade: parseInt(quantidade) }) });
+                    mostrarToast('Estoque atualizado!', 'sucesso');
+                    const variacao = cache.produtos.flatMap(p => p.variacoes).find(v => v.id === id);
+                    if(variacao) variacao.quantidade_estoque = parseInt(quantidade);
+                } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
+            },
+            'stock-minus': () => {
+                const input = document.getElementById(`estoque-v-${id}`);
+                if (input && parseInt(input.value) > 0) input.value = parseInt(input.value) - 1;
+            },
+            'stock-plus': () => {
+                const input = document.getElementById(`estoque-v-${id}`);
+                if (input) input.value = parseInt(input.value) + 1;
+            },
+        };
+        if (allActions[action]) allActions[action]();
+    }
     
+    function handleAcoesCombos(e) {
+        // NOVA FUNÇÃO
+        const button = e.target.closest('button');
+        const header = e.target.closest('.produto-header');
+        if (!button && !header) return;
+        const id = parseInt(button?.dataset.id || header?.dataset.id);
+        let action = button?.dataset.action;
+        if (!action && header && !e.target.closest('.actions-cell')) {
+            action = 'editar-combo';
+        }
+        if (!action) return;
+        if (action === 'toggle-actions-menu') {
+            abrirMenuAcoes(button, 'combo');
+        } else if (action === 'editar-combo') {
+            abrirModalCombo(id);
+        }
+    }
+
     function handleAcoesSetor(e) {
         const target = e.target.closest('button');
         if (!target) return;
@@ -346,224 +540,156 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('nome-setor').value = nome;
             document.getElementById('nome-setor').focus();
         } else if (action === 'excluir-setor') {
-            excluirSetor(id, nome);
-        }
-    }
-    
-    async function excluirProdutoBase(id, nome){
-        if (!confirm(`Tem certeza que deseja excluir o produto base "${nome}" e TODAS as suas variações?`)) return;
-        await fetchProtegido(`${backendUrl}/produtos_base/${id}`, { method: 'DELETE' });
-        await carregarTudo();
-        mostrarToast(`Produto "${nome}" excluído.`, 'sucesso');
-    }
-
-    async function excluirVariacao(id, nome){
-        if (!confirm(`Tem certeza que deseja excluir a variação "${nome}"?`)) return;
-        await fetchProtegido(`${backendUrl}/variacoes/${id}`, { method: 'DELETE' });
-        await carregarTudo();
-        mostrarToast(`Variação "${nome}" excluída.`, 'sucesso');
-    }
-
-    async function excluirSetor(id, nome){
-        if (!confirm(`Tem certeza que deseja excluir o setor "${nome}"?`)) return;
-        try {
-            const response = await fetchProtegido(`${backendUrl}/setores/${id}`, { method: 'DELETE' });
-            if (!response.ok) throw new Error((await response.json()).error);
-            await carregarTudo();
-            mostrarToast(`Setor "${nome}" excluído.`, 'sucesso');
-        } catch (error) {
-            alert('Erro ao excluir setor: ' + error.message);
+             if (!confirm(`Tem certeza que deseja excluir o setor "${nome}"?`)) return;
+             fetchProtegido(`${backendUrl}/setores/${id}`, { method: 'DELETE' }).then(carregarTudo);
         }
     }
 
-    async function duplicarProdutoBase(id, nome){
-        if (!confirm(`Tem certeza que deseja duplicar o produto "${nome}" e todas as suas variações?`)) return;
-        try {
-            const response = await fetchProtegido(`${backendUrl}/produtos_base/${id}/duplicar`, { method: 'POST' });
-            if (!response.ok) throw new Error((await response.json()).error);
-            mostrarToast(`Produto "${nome}" duplicado com sucesso!`, 'sucesso');
-            await carregarTudo();
-        } catch(error) {
-            mostrarToast(`Erro ao duplicar: ${error.message}`, 'erro');
-        }
-    }
-
-    async function duplicarVariacao(id, nome){
-        if (!confirm(`Tem certeza que deseja duplicar a variação "${nome}"?`)) return;
-        try {
-            const response = await fetchProtegido(`${backendUrl}/variacoes/${id}/duplicar`, { method: 'POST' });
-            if (!response.ok) throw new Error((await response.json()).error);
-            mostrarToast(`Variação "${nome}" duplicada com sucesso!`, 'sucesso');
-            await carregarTudo();
-        } catch(error) {
-            mostrarToast(`Erro ao duplicar: ${error.message}`, 'erro');
-        }
-    }
-
-    async function atualizarEstoque(variacaoId){
-        const input = document.getElementById(`estoque-v-${variacaoId}`);
-        const quantidade = input.value;
-        if (quantidade === '' || parseInt(quantidade) < 0) {
-            return mostrarToast('Insira um valor de estoque válido.', 'erro');
-        }
-        try {
-            const response = await fetchProtegido(`${backendUrl}/variacao/estoque`, { 
-                method: 'POST', 
-                body: JSON.stringify({ id: variacaoId, quantidade: parseInt(quantidade) }) 
-            });
-            if (!response.ok) throw new Error((await response.json()).error);
-            mostrarToast('Estoque atualizado!', 'sucesso');
-            const produtoBase = cache.produtos.find(p => p.variacoes.some(v => v.id === variacaoId));
-            const variacao = produtoBase.variacoes.find(v => v.id === variacaoId);
-            variacao.quantidade_estoque = parseInt(quantidade);
-            const linha = input.closest('tr');
-            if (variacao.quantidade_estoque === 0) {
-                linha.classList.add('variacao-esgotada');
-            } else {
-                linha.classList.remove('variacao-esgotada');
+    function handleMenuAcoesClick(e) {
+        const button = e.target.closest('button');
+        if (!button) return;
+        const { action, id, pbId, nome } = button.dataset;
+        const actions = {
+            'editar-produto_base': () => abrirModalProdutoBase(parseInt(id)),
+            'duplicar-produto_base': () => fetchProtegido(`${backendUrl}/produtos_base/${id}/duplicar`, { method: 'POST' }).then(carregarTudo),
+            'excluir-produto_base': () => {
+                if(confirm(`Excluir "${nome}" e todas as suas variações?`)) 
+                fetchProtegido(`${backendUrl}/produtos_base/${id}`, { method: 'DELETE' }).then(carregarTudo);
+            },
+            'editar-variacao': () => abrirModalVariacao(parseInt(id), parseInt(pbId)),
+            'duplicar-variacao': () => fetchProtegido(`${backendUrl}/variacoes/${id}/duplicar`, { method: 'POST' }).then(carregarTudo),
+            'excluir-variacao': () => {
+                if(confirm(`Excluir a variação "${nome}"?`))
+                fetchProtegido(`${backendUrl}/variacoes/${id}`, { method: 'DELETE' }).then(carregarTudo);
+            },
+            'editar-combo': () => abrirModalCombo(parseInt(id)),
+            'excluir-combo': () => {
+                 if(confirm(`Excluir o combo "${nome}"?`))
+                 fetchProtegido(`${backendUrl}/api/dashboard/combos/${id}`, { method: 'DELETE' }).then(carregarTudo);
             }
-        } catch (error) {
-            mostrarToast(`Erro ao atualizar estoque: ${error.message}`, 'erro');
-            carregarTudo();
+        };
+        if (actions[action]) {
+            actions[action]();
+            fecharMenuAcoes();
         }
     }
     
-    function abrirMenuAcoes(targetButton) {
+    function adicionarRegra() {
+        // NOVA FUNÇÃO
+        const tipo = document.getElementById('regra-tipo').value;
+        const upcharge = parseFloat(document.getElementById('regra-upcharge').value) || 0;
+        let novaRegra = { upcharge };
+        if (tipo === 'setor') {
+            novaRegra.setor_id_alvo = parseInt(document.getElementById('regra-setor-alvo').value);
+        } else {
+            novaRegra.produto_base_id_alvo = parseInt(document.getElementById('regra-produto-alvo').value);
+        }
+        regrasTemporarias.push(novaRegra);
+        renderizarRegrasCombo();
+    }
+
+    function handleAcaoRegra(e){
+        // NOVA FUNÇÃO
+        const button = e.target.closest('button');
+        if(!button || button.dataset.action !== 'remover-regra') return;
+        const index = parseInt(button.dataset.index);
+        regrasTemporarias.splice(index, 1);
+        renderizarRegrasCombo();
+    }
+    
+    function toggleRegraInputs(){
+        // NOVA FUNÇÃO
+        const tipo = document.getElementById('regra-tipo').value;
+        document.getElementById('group-regra-setor').style.display = tipo === 'setor' ? 'block' : 'none';
+        document.getElementById('group-regra-produto').style.display = tipo === 'produto' ? 'block' : 'none';
+    }
+
+
+    // --- FUNÇÕES UTILITÁRIAS ---
+    function fecharModais() {
+        document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
+    }
+    function mostrarToast(mensagem, tipo = 'sucesso') {
+        const toast = document.getElementById('toast-notification');
+        toast.textContent = mensagem; toast.className = 'toast';
+        toast.classList.add(tipo, 'show');
+        setTimeout(() => { toast.classList.remove('show');}, 3000);
+    }
+    function gerarSlug(texto) {
+        return texto.toString().toLowerCase().trim()
+            .replace(/\s+/g, '-')
+            .replace(/[^\w\-]+/g, '')
+            .replace(/\-\-+/g, '-');
+    }
+    function setupTabs() {
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetTabId = button.dataset.tab;
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                tabContents.forEach(content => content.classList.remove('active'));
+                button.classList.add('active');
+                document.getElementById(targetTabId).classList.add('active');
+            });
+        });
+        // Ativa a primeira aba por padrão
+        document.querySelector('.tab-button').click();
+    }
+    function inicializarDragAndDrop() {
+        const container = document.getElementById('gerenciador-produtos');
+        if (sortable) sortable.destroy();
+        sortable = new Sortable(container, {
+            animation: 150, handle: '.produto-header',
+            onEnd: async (evt) => {
+                const newOrder = [...container.children].map(card => card.dataset.produtoBaseId);
+                try {
+                    await fetchProtegido(`${backendUrl}/dashboard/produtos/reordenar`, { method: 'POST', body: JSON.stringify({ order: newOrder }) });
+                    mostrarToast('Ordem salva!', 'sucesso');
+                } catch (error) { mostrarToast('Erro ao salvar ordem.', 'erro'); carregarTudo(); }
+            }
+        });
+    }
+     function abrirMenuAcoes(targetButton, typePrefix) {
         const type = targetButton.dataset.type;
         const id = parseInt(targetButton.dataset.id);
         const pbId = parseInt(targetButton.dataset.pbId);
         const nome = targetButton.dataset.nome;
     
         globalActionsMenu.innerHTML = '';
-    
-        if (type === 'base') {
-            globalActionsMenu.innerHTML = `
-                <button data-action="editar-base" data-id="${id}">Editar</button>
-                <button data-action="duplicar-base" data-id="${id}" data-nome="${nome}">Duplicar</button>
-                <button data-action="excluir-base" data-id="${id}" data-nome="${nome}">Remover</button>
+        
+        let actionsHtml = '';
+        if (type === 'produto_base') {
+            actionsHtml = `
+                <button data-action="editar-produto_base" data-id="${id}">Editar</button>
+                <button data-action="duplicar-produto_base" data-id="${id}" data-nome="${nome}">Duplicar</button>
+                <button data-action="excluir-produto_base" data-id="${id}" data-nome="${nome}">Remover</button>
             `;
         } else if (type === 'variacao') {
-            globalActionsMenu.innerHTML = `
+            actionsHtml = `
                 <button data-action="editar-variacao" data-id="${id}" data-pb-id="${pbId}">Editar</button>
                 <button data-action="duplicar-variacao" data-id="${id}" data-nome="${nome}">Duplicar</button>
                 <button data-action="excluir-variacao" data-id="${id}" data-nome="${nome}">Remover</button>
             `;
+        } else if (type === 'combo') {
+             actionsHtml = `
+                <button data-action="editar-combo" data-id="${id}">Editar</button>
+                <button data-action="excluir-combo" data-id="${id}" data-nome="${nome}">Remover</button>
+            `;
         }
-    
+        globalActionsMenu.innerHTML = actionsHtml;
+
         const rect = targetButton.getBoundingClientRect();
         globalActionsMenu.style.display = 'block';
         globalActionsMenu.style.top = `${window.scrollY + rect.bottom}px`;
-        globalActionsMenu.style.left = `${rect.left}px`;
+        globalActionsMenu.style.left = `${rect.right - globalActionsMenu.offsetWidth}px`;
     }
 
     function fecharMenuAcoes() {
-        if (globalActionsMenu) {
-            globalActionsMenu.style.display = 'none';
-        }
+        if (globalActionsMenu) globalActionsMenu.style.display = 'none';
     }
 
-    // --- INICIALIZAÇÃO E EVENT LISTENERS ---
-    
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.actions-menu-btn') && !e.target.closest('#global-actions-menu')) {
-            fecharMenuAcoes();
-        }
-    });
-
-    // <<-- CORREÇÃO APLICADA AQUI -->>
-    btnAddProdutoBase.addEventListener('click', () => {
-        abrirModalProdutoBase();
-    });
-
-    gerenciadorProdutos.addEventListener('click', (e) => {
-        const target = e.target;
-        const button = target.closest('button');
-        const header = target.closest('.produto-header');
-
-        const action = button ? button.dataset.action : (header && !target.closest('.actions-cell') ? 'toggle-variacoes' : null);
-        
-        if (!action) return;
-        
-        if (action === 'toggle-actions-menu') {
-            e.stopPropagation();
-            const isVisible = globalActionsMenu.style.display === 'block';
-            const alreadyTargeted = globalActionsMenu.dataset.ownerId === button.dataset.id;
-            
-            if (isVisible && alreadyTargeted) {
-                fecharMenuAcoes();
-            } else {
-                globalActionsMenu.dataset.ownerId = button.dataset.id;
-                abrirMenuAcoes(button);
-            }
-            return;
-        }
-
-        if(action !== 'toggle-variacoes') {
-             fecharMenuAcoes();
-        }
-
-        const id = button ? parseInt(button.dataset.id) : (header ? parseInt(header.dataset.id) : null);
-        const pbId = button ? parseInt(button.dataset.pbId) : null;
-        const nome = button ? button.dataset.nome : null;
-
-        const allActions = {
-            'toggle-variacoes': () => {
-                const container = document.getElementById(`variacoes-pb-${id}`);
-                const toggleIcon = header.querySelector('.produto-header-toggle');
-                if (container && toggleIcon) {
-                    container.classList.toggle('hidden');
-                    toggleIcon.style.transform = container.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(90deg)';
-                }
-            },
-            'adicionar-variacao': () => abrirModalVariacao(null, id),
-            'salvar-estoque': () => atualizarEstoque(id),
-            'stock-minus': () => {
-                const input = document.getElementById(`estoque-v-${id}`);
-                if (input && parseInt(input.value) > 0) input.value = parseInt(input.value) - 1;
-            },
-            'stock-plus': () => {
-                const input = document.getElementById(`estoque-v-${id}`);
-                if (input) input.value = parseInt(input.value) + 1;
-            },
-        };
-
-        if (allActions[action]) {
-            allActions[action]();
-        }
-    });
-
-    globalActionsMenu.addEventListener('click', (e) => {
-        const button = e.target.closest('button');
-        if (!button) return;
-        
-        const action = button.dataset.action;
-        const id = parseInt(button.dataset.id);
-        const pbId = parseInt(button.dataset.pbId);
-        const nome = button.dataset.nome;
-        
-        const menuActions = {
-            'editar-base': () => abrirModalProdutoBase(id),
-            'duplicar-base': () => duplicarProdutoBase(id, nome),
-            'excluir-base': () => excluirProdutoBase(id, nome),
-            'editar-variacao': () => abrirModalVariacao(id, pbId),
-            'duplicar-variacao': () => duplicarVariacao(id, nome),
-            'excluir-variacao': () => excluirVariacao(id, nome)
-        };
-        
-        if (menuActions[action]) {
-            menuActions[action]();
-            fecharMenuAcoes();
-        }
-    });
-    
-    document.getElementById('form-produto-base').addEventListener('submit', async (e) => { e.preventDefault(); const id = document.getElementById('pb-id').value; const formData = new FormData(e.target); const method = id ? 'PUT' : 'POST'; const url = id ? `${backendUrl}/produtos_base/${id}` : `${backendUrl}/produtos_base`; try { const response = await fetchProtegido(url, { method, body: formData }); if (!response.ok) throw new Error((await response.json()).error); fecharModais(); await carregarTudo(); mostrarToast(`Produto base ${id ? 'atualizado' : 'criado'}!`, 'sucesso'); } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); } });
-    document.getElementById('form-variacao').addEventListener('submit', async (e) => { e.preventDefault(); const id = document.getElementById('v-id').value; const data = { produto_base_id: document.getElementById('v-pb-id').value, nome: document.getElementById('v-nome').value, preco: document.getElementById('v-preco').value, slug: gerarSlug(document.getElementById('v-nome').value) }; const method = id ? 'PUT' : 'POST'; const url = id ? `${backendUrl}/variacoes/${id}` : `${backendUrl}/variacoes`; try { const response = await fetchProtegido(url, { method, body: JSON.stringify(data) }); if (!response.ok) throw new Error((await response.json()).error); fecharModais(); await carregarTudo(); mostrarToast(`Variação ${id ? 'atualizada' : 'criada'}!`, 'sucesso'); } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); } });
-
-    setupTabs();
-    setupModalCancelButtons();
-    loginForm.addEventListener('submit', handleLogin);
-    btnLogout.addEventListener('click', handleLogout);
-    toggleSenhaBtn.addEventListener('click', toggleVisibilidadeSenha);
-    
+    // --- INICIALIZAÇÃO ---
+    setupEventListeners();
     verificarSessao();
 });

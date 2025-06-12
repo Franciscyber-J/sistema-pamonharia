@@ -42,12 +42,19 @@
             </div>
             <div class="tabs">
                 <button class="tab-button active" data-tab="Produtos">Produtos e Estoque</button>
-                <button class="tab-button" data-tab="Setores" data-admin-only>Gerenciar Setores</button>
+                <button class="tab-button" data-tab="Combos" data-admin-only>Gerenciar Combos</button> <button class="tab-button" data-tab="Setores" data-admin-only>Gerenciar Setores</button>
             </div>
+            
             <div id="Produtos" class="tab-content active">
                 <button class="save-btn" id="btn-add-produto-base" data-admin-only>+ Adicionar Novo Produto Base</button>
                 <div id="gerenciador-produtos" style="margin-top: 20px;"></div>
             </div>
+
+            <div id="Combos" class="tab-content">
+                 <button class="save-btn" id="btn-add-combo" data-admin-only>+ Criar Novo Combo</button>
+                 <div id="gerenciador-combos" style="margin-top: 20px;"></div>
+            </div>
+            
             <div id="Setores" class="tab-content"></div>
         </div>
     </div>
@@ -59,7 +66,6 @@
                 <input type="hidden" id="pb-id">
                 <label for="pb-nome">Nome do Produto:</label>
                 <input type="text" id="pb-nome" name="nome" required>
-                <input type="hidden" id="pb-slug" name="slug">
                 <label for="pb-descricao">Descrição:</label>
                 <textarea id="pb-descricao" name="descricao" rows="3"></textarea>
                 <label for="pb-setor">Setor:</label>
@@ -73,7 +79,6 @@
             </form>
         </div>
     </div>
-
     <div id="modal-variacao" class="modal-backdrop">
         <div class="modal">
             <h2 id="form-v-title">Variação</h2>
@@ -82,7 +87,6 @@
                 <input type="hidden" id="v-pb-id" name="produto_base_id">
                 <label for="v-nome">Nome da Variação:</label>
                 <input type="text" id="v-nome" name="nome" required>
-                <input type="hidden" id="v-slug" name="slug">
                 <label for="v-preco">Preço:</label>
                 <input type="number" step="0.01" id="v-preco" name="preco" required>
                 <div class="form-buttons">
@@ -93,8 +97,76 @@
         </div>
     </div>
 
-    <div id="toast-notification"></div>
+    <div id="modal-combo" class="modal-backdrop">
+        <div class="modal large">
+            <h2 id="form-combo-title">Gerenciar Combo</h2>
+            <form id="form-combo">
+                <input type="hidden" id="combo-id">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="combo-nome">Nome do Combo:</label>
+                        <input type="text" id="combo-nome" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="combo-preco">Preço Base (R$):</label>
+                        <input type="number" step="0.01" id="combo-preco" required>
+                    </div>
+                     <div class="form-group">
+                        <label for="combo-qtd-itens">Qtd. Itens Obrigatória:</label>
+                        <input type="number" id="combo-qtd-itens" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="combo-ativo">Status:</label>
+                        <select id="combo-ativo">
+                            <option value="true">Ativo</option>
+                            <option value="false">Inativo</option>
+                        </select>
+                    </div>
+                </div>
+                <label for="combo-descricao">Descrição:</label>
+                <textarea id="combo-descricao" rows="3"></textarea>
+                <label>Imagem do Combo (deixe em branco para não alterar):</label>
+                <input type="file" id="combo-imagem" name="imagem" accept="image/*">
+                
+                <hr>
+                <h3>Regras do Combo</h3>
+                <div id="regras-container"></div>
+                <div class="add-regra-form">
+                    <h4>Adicionar Nova Regra</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="regra-tipo">Aplicar regra a:</label>
+                            <select id="regra-tipo">
+                                <option value="setor">Setor Inteiro</option>
+                                <option value="produto">Produto Específico</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="group-regra-setor">
+                            <label for="regra-setor-alvo">Setor</label>
+                             <select id="regra-setor-alvo"></select>
+                        </div>
+                         <div class="form-group" id="group-regra-produto" style="display:none;">
+                            <label for="regra-produto-alvo">Produto</label>
+                             <select id="regra-produto-alvo"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="regra-upcharge">Acréscimo (R$):</label>
+                            <input type="number" step="0.01" id="regra-upcharge" value="0">
+                        </div>
+                    </div>
+                    <button type="button" class="add-btn btn-sm" id="btn-add-regra">Adicionar Regra</button>
+                </div>
 
+                <div class="form-buttons">
+                    <button type="submit" class="save-btn">Salvar Combo</button>
+                    <button type="button" class="cancel-btn btn-modal-cancel">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <div id="toast-notification"></div>
     <div id="global-actions-menu" class="actions-dropdown"></div>
 
     <script src="dashboard.js"></script>
