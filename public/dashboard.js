@@ -18,33 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- FUNÇÃO DE INICIALIZAÇÃO PRINCIPAL ---
     function init() {
-        verificarSessao();
         setupEventListeners();
-    }
-
-    // --- LÓGICA DE CARREGAMENTO DE DADOS ---
-    async function carregarTudo() {
-        try {
-            mostrarToast('Carregando dados...', 'info');
-            const [setoresRes, produtosRes, combosRes] = await Promise.all([
-                fetchProtegido(`${backendUrl}/setores`),
-                fetchProtegido(`${backendUrl}/dashboard/produtos`),
-                fetchProtegido(`${backendUrl}/api/dashboard/combos`)
-            ]);
-            cache.setores = (await setoresRes.json()).data;
-            cache.produtos = (await produtosRes.json()).data;
-            cache.combos = (await combosRes.json()).data;
-            
-            renderizarGerenciadorProdutos();
-            renderizarGerenciadorSetores();
-            renderizarGerenciadorCombos();
-
-            inicializarDragAndDrop();
-            aplicarPermissoes();
-        } catch (err) {
-            mostrarToast(err.message, 'erro');
-            console.error(err);
-        }
+        verificarSessao();
     }
 
     // --- SETUP DE EVENTOS ---
@@ -87,7 +62,32 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
+    // --- LÓGICA DE CARREGAMENTO DE DADOS ---
+    async function carregarTudo() {
+        try {
+            mostrarToast('Carregando dados...', 'info');
+            const [setoresRes, produtosRes, combosRes] = await Promise.all([
+                fetchProtegido(`${backendUrl}/setores`),
+                fetchProtegido(`${backendUrl}/dashboard/produtos`),
+                fetchProtegido(`${backendUrl}/api/dashboard/combos`)
+            ]);
+            cache.setores = (await setoresRes.json()).data;
+            cache.produtos = (await produtosRes.json()).data;
+            cache.combos = (await combosRes.json()).data;
+            
+            renderizarGerenciadorProdutos();
+            renderizarGerenciadorSetores();
+            renderizarGerenciadorCombos();
+
+            inicializarDragAndDrop();
+            aplicarPermissoes();
+        } catch (err) {
+            mostrarToast(err.message, 'erro');
+            console.error(err);
+        }
+    }
+
     // --- LÓGICA DE AUTENTICAÇÃO E SESSÃO ---
     async function handleLogin(event) {
         event.preventDefault();
@@ -316,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function abrirModalCombo(id = null) {
-        regrasTemporarias = []; // Limpa o estado anterior
+        regrasTemporarias = [];
         const form = document.getElementById('form-combo');
         form.reset();
         document.getElementById('combo-id').value = '';
@@ -577,14 +577,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 const targetTabId = button.dataset.tab;
                 tabButtons.forEach(btn => btn.classList.remove('active'));
-                tabContents.forEach(content => content.classList.remove('active'));
+                tabContents.forEach(content => {
+                    content.classList.remove('active');
+                    content.style.display = 'none';
+                });
                 button.classList.add('active');
-                document.getElementById(targetTabId).classList.add('active');
+                const targetContent = document.getElementById(targetTabId);
+                targetContent.classList.add('active');
+                targetContent.style.display = 'block';
             });
         });
-        if(document.querySelector('.tab-button.active')) {
-            document.querySelector('.tab-button.active').click();
-        } else {
+        if(document.querySelector('.tab-button')) {
             document.querySelector('.tab-button').click();
         }
     }
@@ -639,6 +642,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function fecharMenuAcoes() {
         if (globalActionsMenu) globalActionsMenu.style.display = 'none';
+    }
+
+    function verificarSessao() {
+        const token = localStorage.getItem('authToken');
+        if (token) {
+            mostrarDashboard();
+            carregarTudo();
+        } else {
+            mostrarLogin();
+        }
     }
 
     // --- INICIALIZAÇÃO ---
