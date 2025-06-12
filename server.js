@@ -9,7 +9,7 @@ const multer = require('multer');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { zonedTimeToUtc, utcToZonedTime, format } = require('date-fns-tz'); // NOVA FERRAMENTA DE FUSO HORÁRIO
+const { zonedTimeToUtc, utcToZonedTime, format } = require('date-fns-tz');
 
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
@@ -43,11 +43,9 @@ app.use(express.static('public', { index: false }));
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
-
 app.get('/dashboard', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
-
 app.get('/cardapio', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -58,9 +56,7 @@ app.get('/cardapio', (req, res) => {
 app.post('/login', async (req, res) => {
     try {
         const { email, senha } = req.body;
-        if (!email || !senha) {
-            return res.status(400).json({ error: "Email e senha são obrigatórios." });
-        }
+        if (!email || !senha) return res.status(400).json({ error: "Email e senha são obrigatórios." });
         const { rows } = await db.query("SELECT * FROM usuarios WHERE email = $1", [email]);
         const usuario = rows[0];
         if (!usuario) return res.status(401).json({ error: "Credenciais inválidas." });
@@ -73,7 +69,6 @@ app.post('/login', async (req, res) => {
         res.status(500).json({ error: "Erro interno do servidor." });
     }
 });
-
 const protegerRota = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -84,12 +79,11 @@ const protegerRota = (req, res, next) => {
         next();
     });
 };
-
 const apenasAdmin = (req, res, next) => {
     if (req.usuario && req.usuario.cargo === 'admin') {
         next();
     } else {
-        res.status(403).json({ error: "Acesso negado. Recurso restrito a administradores." });
+        res.status(403).json({ error: "Acesso negado." });
     }
 };
 
@@ -97,26 +91,27 @@ const apenasAdmin = (req, res, next) => {
 // --- ROTAS DA API ---
 // =================================================================================================
 
-// --- NOVAS ROTAS PARA HORÁRIO DE FUNCIONAMENTO ---
-
-// Rota pública para o cliente verificar o status da loja
+// --- ROTAS PARA HORÁRIO DE FUNCIONAMENTO (COM DEPURAÇÃO) ---
 app.get('/api/loja/status', async (req, res) => {
     try {
         const { rows } = await db.query('SELECT aberta_manualmente, horarios_json FROM configuracao_loja WHERE id = 1');
+        console.log('LOG DE DEPURAÇÃO: Dados buscados do banco:', rows[0]); // LOG 1
+        
         const config = rows[0];
         if (!config) {
             return res.json({ status: 'fechado', mensagem: 'Configuração da loja não encontrada.' });
         }
-
         if (config.aberta_manualmente) {
-            return res.json({ status: 'aberto', mensagem: 'Estamos abertos!' });
+            return res.json({ status: 'aberto', mensagem: 'Loja aberta manualmente!' });
         }
-
+        if (!config.horarios_json) {
+             return res.json({ status: 'fechado', mensagem: 'Horários de funcionamento não configurados.' });
+        }
+        
         const horarios = JSON.parse(config.horarios_json);
         const timeZone = 'America/Sao_Paulo';
         const agora = new Date();
-        const diaDaSemana = agora.getDay().toString(); // 0 = Domingo, 1 = Segunda, ...
-        
+        const diaDaSemana = agora.getDay().toString();
         const horarioDeHoje = horarios[diaDaSemana];
 
         if (!horarioDeHoje || !horarioDeHoje.ativo) {
@@ -132,12 +127,10 @@ app.get('/api/loja/status', async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Erro ao verificar status da loja:", err);
+        console.error("ERRO COMPLETO AO VERIFICAR STATUS:", err); // LOG 2
         res.status(500).json({ error: 'Erro ao verificar status da loja.' });
     }
 });
-
-// Rota para o dashboard buscar a configuração completa
 app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
     try {
         const { rows } = await db.query('SELECT * FROM configuracao_loja WHERE id = 1');
@@ -146,8 +139,6 @@ app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
         res.status(500).json({ error: 'Erro ao buscar configurações.' });
     }
 });
-
-// Rota para o dashboard atualizar a configuração
 app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { aberta_manualmente, horarios_json } = req.body;
@@ -157,27 +148,21 @@ app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (r
         );
         res.json({ message: 'Configurações da loja atualizadas com sucesso!' });
     } catch (err) {
-        console.error("Erro ao atualizar configurações:", err);
         res.status(500).json({ error: 'Erro ao atualizar configurações.' });
     }
 });
 
-// =================================================================================================
-// --- ROTAS DA API ---
-// =================================================================================================
+
+// --- OUTRAS ROTAS DA API ---
 const getCardapioCompleto = async () => {
     const sql = `
         SELECT 
             pb.id, pb.nome, pb.descricao, pb.imagem_url, pb.ordem, s.nome as setor_nome, s.id as setor_id,
             COALESCE(
                 (SELECT json_agg(
-                    json_build_object(
-                        'id', v.id, 'nome', v.nome, 'preco', v.preco, 
-                        'slug', v.slug, 'quantidade_estoque', v.quantidade_estoque
-                    ) ORDER BY v.id
-                )
-                FROM variacoes v WHERE v.produto_base_id = pb.id),
-                '[]'::json
+                    json_build_object('id', v.id, 'nome', v.nome, 'preco', v.preco, 'slug', v.slug, 'quantidade_estoque', v.quantidade_estoque) 
+                    ORDER BY v.id
+                ) FROM variacoes v WHERE v.produto_base_id = pb.id), '[]'::json
             ) as variacoes
         FROM produtos_base pb
         LEFT JOIN setores s ON pb.setor_id = s.id
@@ -185,13 +170,9 @@ const getCardapioCompleto = async () => {
     const { rows } = await db.query(sql);
     return rows;
 };
-
-// API PARA O CARDÁPIO PÚBLICO
 app.get('/api/cardapio', async (req, res) => {
-    try {
-        const cardapio = await getCardapioCompleto();
-        res.json({ data: cardapio });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    try { const cardapio = await getCardapioCompleto(); res.json({ data: cardapio }); } 
+    catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // As rotas de API não devem ter o mesmo nome das rotas de página
