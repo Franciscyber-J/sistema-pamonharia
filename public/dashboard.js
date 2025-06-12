@@ -18,18 +18,29 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- FUNÇÃO DE INICIALIZAÇÃO PRINCIPAL ---
     function init() {
-        setupEventListeners();
         verificarSessao();
+        setupEventListeners();
     }
 
     // --- SETUP DE EVENTOS ---
     function setupEventListeners() {
-        loginForm.addEventListener('submit', handleLogin);
-        btnLogout.addEventListener('click', handleLogout);
-        document.getElementById('toggle-senha').addEventListener('click', () => {
+        // Função auxiliar para adicionar listeners de forma segura
+        const safeAddEventListener = (selector, event, handler) => {
+            const element = document.querySelector(selector);
+            if (element) {
+                element.addEventListener(event, handler);
+            } else {
+                console.warn(`Elemento não encontrado para o seletor: ${selector}`);
+            }
+        };
+
+        safeAddEventListener('#form-login', 'submit', handleLogin);
+        safeAddEventListener('#btn-logout', 'click', handleLogout);
+        safeAddEventListener('#toggle-senha', 'click', () => {
              const input = document.getElementById('login-senha');
              const eyeOpen = document.getElementById('eye-open');
              const eyeClosed = document.getElementById('eye-closed');
+             if(!input || !eyeOpen || !eyeClosed) return;
              const isPassword = input.type === 'password';
              input.type = isPassword ? 'text' : 'password';
              eyeOpen.style.display = isPassword ? 'none' : 'block';
@@ -39,22 +50,22 @@ document.addEventListener('DOMContentLoaded', () => {
         setupTabs();
         document.querySelectorAll('.btn-modal-cancel').forEach(btn => btn.addEventListener('click', fecharModais));
         
-        btnAddProdutoBase.addEventListener('click', () => abrirModalProdutoBase());
-        btnAddCombo.addEventListener('click', () => abrirModalCombo());
+        safeAddEventListener('#btn-add-produto-base', 'click', () => abrirModalProdutoBase());
+        safeAddEventListener('#btn-add-combo', 'click', () => abrirModalCombo());
 
-        gerenciadorProdutos.addEventListener('click', handleAcoesProdutos);
-        gerenciadorCombos.addEventListener('click', handleAcoesCombos);
-        globalActionsMenu.addEventListener('click', handleMenuAcoesClick);
-        document.getElementById('lista-setores').addEventListener('click', handleAcoesSetor);
+        safeAddEventListener('#gerenciador-produtos', 'click', handleAcoesProdutos);
+        safeAddEventListener('#gerenciador-combos', 'click', handleAcoesCombos);
+        safeAddEventListener('#global-actions-menu', 'click', handleMenuAcoesClick);
+        safeAddEventListener('#lista-setores', 'click', handleAcoesSetor);
 
-        document.getElementById('form-produto-base').addEventListener('submit', handleFormProdutoSubmit);
-        document.getElementById('form-variacao').addEventListener('submit', handleFormVariacaoSubmit);
-        document.getElementById('form-setor').addEventListener('submit', handleFormSetorSubmit);
-        document.getElementById('form-combo').addEventListener('submit', handleFormComboSubmit);
+        safeAddEventListener('#form-produto-base', 'submit', handleFormProdutoSubmit);
+        safeAddEventListener('#form-variacao', 'submit', handleFormVariacaoSubmit);
+        safeAddEventListener('#form-setor', 'submit', handleFormSetorSubmit);
+        safeAddEventListener('#form-combo', 'submit', handleFormComboSubmit);
 
-        document.getElementById('btn-add-regra').addEventListener('click', adicionarRegra);
-        document.getElementById('regra-tipo').addEventListener('change', toggleRegraInputs);
-        document.getElementById('regras-container').addEventListener('click', handleAcaoRegra);
+        safeAddEventListener('#btn-add-regra', 'click', adicionarRegra);
+        safeAddEventListener('#regra-tipo', 'change', toggleRegraInputs);
+        safeAddEventListener('#regras-container', 'click', handleAcaoRegra);
 
          document.addEventListener('click', (e) => {
             if (!e.target.closest('.actions-menu-btn') && !e.target.closest('#global-actions-menu')) {
@@ -72,6 +83,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetchProtegido(`${backendUrl}/dashboard/produtos`),
                 fetchProtegido(`${backendUrl}/api/dashboard/combos`)
             ]);
+            if(!setoresRes.ok || !produtosRes.ok || !combosRes.ok) throw new Error("Falha ao carregar dados do servidor.");
+            
             cache.setores = (await setoresRes.json()).data;
             cache.produtos = (await produtosRes.json()).data;
             cache.combos = (await combosRes.json()).data;
@@ -217,9 +230,9 @@ document.addEventListener('DOMContentLoaded', () => {
         cache.setores.forEach(setor => {
             listaUl.innerHTML += `<li><span>${setor.nome}</span><div class="actions-cell"><button class="edit-btn btn-sm" data-action="editar-setor" data-id="${setor.id}" data-nome="${setor.nome}">Editar</button><button class="delete-btn btn-sm" data-action="excluir-setor" data-id="${setor.id}" data-nome="${setor.nome}">Excluir</button></div></li>`;
         });
-        document.getElementById('btn-limpar-form-setor').addEventListener('click', () => {
-              document.getElementById('form-setor').reset();
-              document.getElementById('setor-id').value = '';
+        document.querySelector('#btn-limpar-form-setor').addEventListener('click', () => {
+              document.querySelector('#form-setor').reset();
+              document.querySelector('#setor-id').value = '';
         });
     }
 
@@ -560,7 +573,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- FUNÇÕES UTILITÁRIAS ---
     function fecharModais() {
-        regrasTemporarias = []; // Limpa o estado das regras ao fechar qualquer modal
+        regrasTemporarias = [];
         document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
     }
     function mostrarToast(mensagem, tipo = 'sucesso') {
@@ -578,13 +591,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const targetTabId = button.dataset.tab;
                 tabButtons.forEach(btn => btn.classList.remove('active'));
                 tabContents.forEach(content => {
-                    content.classList.remove('active');
                     content.style.display = 'none';
+                    content.classList.remove('active');
                 });
                 button.classList.add('active');
                 const targetContent = document.getElementById(targetTabId);
-                targetContent.classList.add('active');
                 targetContent.style.display = 'block';
+                targetContent.classList.add('active');
             });
         });
         if(document.querySelector('.tab-button')) {
@@ -615,22 +628,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         let actionsHtml = '';
         if (type === 'produto_base') {
-            actionsHtml = `
-                <button data-action="editar-produto_base" data-id="${id}">Editar</button>
-                <button data-action="duplicar-produto_base" data-id="${id}" data-nome="${nome}">Duplicar</button>
-                <button data-action="excluir-produto_base" data-id="${id}" data-nome="${nome}">Remover</button>
-            `;
+            actionsHtml = `<button data-action="editar-produto_base" data-id="${id}">Editar</button><button data-action="duplicar-produto_base" data-id="${id}" data-nome="${nome}">Duplicar</button><button data-action="excluir-produto_base" data-id="${id}" data-nome="${nome}">Remover</button>`;
         } else if (type === 'variacao') {
-            actionsHtml = `
-                <button data-action="editar-variacao" data-id="${id}" data-pb-id="${pbId}">Editar</button>
-                <button data-action="duplicar-variacao" data-id="${id}" data-nome="${nome}">Duplicar</button>
-                <button data-action="excluir-variacao" data-id="${id}" data-nome="${nome}">Remover</button>
-            `;
+            actionsHtml = `<button data-action="editar-variacao" data-id="${id}" data-pb-id="${pbId}">Editar</button><button data-action="duplicar-variacao" data-id="${id}" data-nome="${nome}">Duplicar</button><button data-action="excluir-variacao" data-id="${id}" data-nome="${nome}">Remover</button>`;
         } else if (type === 'combo') {
-             actionsHtml = `
-                <button data-action="editar-combo" data-id="${id}">Editar</button>
-                <button data-action="excluir-combo" data-id="${id}" data-nome="${nome}">Remover</button>
-            `;
+             actionsHtml = `<button data-action="editar-combo" data-id="${id}">Editar</button><button data-action="excluir-combo" data-id="${id}" data-nome="${nome}">Remover</button>`;
         }
         globalActionsMenu.innerHTML = actionsHtml;
 
@@ -648,7 +650,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const token = localStorage.getItem('authToken');
         if (token) {
             mostrarDashboard();
-            carregarTudo();
         } else {
             mostrarLogin();
         }
