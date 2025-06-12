@@ -1,20 +1,16 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- ELEMENTOS E VARIÁVEIS GLOBAIS ---
-    const backendUrl = 'https://pamonhariasaborosa.expertbr.com'; // ATUALIZADO PARA O DOMÍNIO FINAL
-    let cache = { produtos: [], setores: [], combos: [], configuracoes: {} }; // Cache para configurações
+    const backendUrl = 'https://pamonhariasaborosa.expertbr.com';
+    let cache = { produtos: [], setores: [], combos: [], configuracoes: {} };
     let sortable = null;
     let regrasTemporarias = [];
 
     // --- ELEMENTOS DO DOM ---
     const loginContainer = document.getElementById('login-container');
     const dashboardContainer = document.getElementById('dashboard-container');
-    const loginForm = document.getElementById('form-login');
-    const btnLogout = document.getElementById('btn-logout');
-    const btnAddProdutoBase = document.getElementById('btn-add-produto-base');
-    const btnAddCombo = document.getElementById('btn-add-combo');
-    const globalActionsMenu = document.getElementById('global-actions-menu');
     const gerenciadorProdutos = document.getElementById('gerenciador-produtos');
     const gerenciadorCombos = document.getElementById('gerenciador-combos');
+    const globalActionsMenu = document.getElementById('global-actions-menu');
     
     // --- FUNÇÃO DE INICIALIZAÇÃO PRINCIPAL ---
     function init() {
@@ -77,7 +73,6 @@ document.addEventListener('DOMContentLoaded', () => {
     async function carregarTudo() {
         try {
             mostrarToast('Carregando dados...', 'info');
-            // ADICIONADO FETCH PARA CONFIGURAÇÕES
             const [setoresRes, produtosRes, combosRes, configRes] = await Promise.all([
                 fetchProtegido(`${backendUrl}/setores`),
                 fetchProtegido(`${backendUrl}/api/dashboard/produtos`),
@@ -89,12 +84,12 @@ document.addEventListener('DOMContentLoaded', () => {
             cache.setores = (await setoresRes.json()).data;
             cache.produtos = (await produtosRes.json()).data;
             cache.combos = (await combosRes.json()).data;
-            cache.configuracoes = await configRes.json(); // GUARDA AS CONFIGURAÇÕES NO CACHE
+            cache.configuracoes = await configRes.json();
             
             renderizarGerenciadorProdutos();
             renderizarGerenciadorSetores();
             renderizarGerenciadorCombos();
-            renderizarConfiguracoesLoja(); // CHAMA A NOVA FUNÇÃO DE RENDERIZAÇÃO
+            renderizarConfiguracoesLoja();
 
             inicializarDragAndDrop();
             aplicarPermissoes();
@@ -166,19 +161,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- LÓGICA DE PERMISSÕES ATUALIZADA ---
     function aplicarPermissoes() {
         const usuarioString = localStorage.getItem('usuario');
         if (!usuarioString) return;
         const usuario = JSON.parse(usuarioString);
-        const elementosAdmin = document.querySelectorAll('[data-admin-only]');
         const isOperador = usuario.cargo === 'operador';
-        if (sortable) sortable.option("disabled", isOperador);
-        elementosAdmin.forEach(el => {
+
+        // Lógica para elementos gerais de admin
+        document.querySelectorAll('[data-admin-only]').forEach(el => {
             el.style.display = isOperador ? 'none' : '';
         });
+
+        // Garante que a aba de produtos esteja visível para o operador e seja a padrão
+        const tabProdutosBtn = document.querySelector('.tab-button[data-tab="Produtos"]');
+        const tabProdutosContent = document.getElementById('Produtos');
+        if (tabProdutosBtn) tabProdutosBtn.style.display = '';
+        if (tabProdutosContent) tabProdutosContent.style.display = '';
+
+        // Desabilita o drag-and-drop para operadores
+        if (sortable) sortable.option("disabled", isOperador);
         document.querySelectorAll('.produto-header').forEach(el => {
             el.style.cursor = isOperador ? 'default' : 'grab';
         });
+
+        // Abre a primeira aba visível como padrão
+        const firstVisibleTab = document.querySelector('.tab-button:not([style*="display: none"])');
+        if (firstVisibleTab) {
+            firstVisibleTab.click();
+        }
     }
 
     async function fetchProtegido(url, options = {}) {
@@ -194,7 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return response;
     }
     
-    // --- LÓGICA DE RENDERIZAÇÃO (CRIAR HTML) ---
+    // --- LÓGICA DE RENDERIZAÇÃO ---
     function renderizarGerenciadorProdutos() {
         gerenciadorProdutos.innerHTML = ''; 
         cache.produtos.forEach(pb => {
@@ -286,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // --- NOVAS FUNÇÕES PARA GERENCIAR HORÁRIOS ---
+    // --- LÓGICA ATUALIZADA PARA RENDERIZAR CONFIGURAÇÕES ---
     function renderizarConfiguracoesLoja() {
         const container = document.getElementById('Configuracoes');
         const diasDaSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
@@ -326,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
 
-                <div class="config-section">
+                <div class="config-section" data-admin-only>
                     <h3>Horários de Funcionamento Programados</h3>
                     <div class="horarios-grid">
                         ${htmlHorarios}
@@ -341,7 +352,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         popularFormConfiguracoes();
 
-        // Adiciona os event listeners após renderizar
         document.getElementById('form-configuracoes').addEventListener('submit', handleFormConfigSubmit);
         diasDaSemana.forEach((_, index) => {
             document.getElementById(`ativo-${index}`).addEventListener('change', (e) => {
@@ -356,15 +366,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('aberta-manualmente').checked = config.aberta_manualmente;
         
-        const horarios = JSON.parse(config.horarios_json || '{}');
-        for (let i = 0; i < 7; i++) {
-            const diaConfig = horarios[i];
-            if (diaConfig) {
-                const ativoCheckbox = document.getElementById(`ativo-${i}`);
-                ativoCheckbox.checked = diaConfig.ativo;
-                document.getElementById(`inicio-${i}`).value = diaConfig.inicio;
-                document.getElementById(`fim-${i}`).value = diaConfig.fim;
-                document.getElementById(`dia-container-${i}`).classList.toggle('inativo', !diaConfig.ativo);
+        // Acessa a seção de horários apenas se ela existir no DOM (para evitar erros no modo operador)
+        const horariosGrid = document.querySelector('.horarios-grid');
+        if (horariosGrid) {
+            const horarios = JSON.parse(config.horarios_json || '{}');
+            for (let i = 0; i < 7; i++) {
+                const diaConfig = horarios[i];
+                if (diaConfig) {
+                    const ativoCheckbox = document.getElementById(`ativo-${i}`);
+                    ativoCheckbox.checked = diaConfig.ativo;
+                    document.getElementById(`inicio-${i}`).value = diaConfig.inicio;
+                    document.getElementById(`fim-${i}`).value = diaConfig.fim;
+                    document.getElementById(`dia-container-${i}`).classList.toggle('inativo', !diaConfig.ativo);
+                }
             }
         }
     }
@@ -374,13 +388,22 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const aberta_manualmente = document.getElementById('aberta-manualmente').checked;
         const horarios_json = {};
+        
+        const usuarioString = localStorage.getItem('usuario');
+        const usuario = JSON.parse(usuarioString);
 
-        for (let i = 0; i < 7; i++) {
-            horarios_json[i] = {
-                ativo: document.getElementById(`ativo-${i}`).checked,
-                inicio: document.getElementById(`inicio-${i}`).value,
-                fim: document.getElementById(`fim-${i}`).value,
-            };
+        // Se for admin, coleta os dados de horário. Se for operador, envia os horários existentes para não sobrescrevê-los.
+        if (usuario.cargo === 'admin') {
+            for (let i = 0; i < 7; i++) {
+                horarios_json[i] = {
+                    ativo: document.getElementById(`ativo-${i}`).checked,
+                    inicio: document.getElementById(`inicio-${i}`).value,
+                    fim: document.getElementById(`fim-${i}`).value,
+                };
+            }
+        } else {
+             // Operador apenas envia o JSON que já estava no cache para não corromper os dados
+            Object.assign(horarios_json, JSON.parse(cache.configuracoes.horarios_json || '{}'));
         }
 
         const data = { aberta_manualmente, horarios_json };
@@ -392,7 +415,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!response.ok) throw new Error((await response.json()).error);
             
-            // Atualiza o cache local para refletir a mudança
             cache.configuracoes.aberta_manualmente = aberta_manualmente;
             cache.configuracoes.horarios_json = JSON.stringify(horarios_json);
 
@@ -402,6 +424,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // O restante das funções permanece o mesmo...
+    // [ Funções de Modais, Handlers de Forms, Handlers de Ações, Utilitários ]
+    // (O código completo para essas seções está omitido aqui para brevidade, mas deve ser mantido no seu arquivo final)
     // --- LÓGICA DOS MODAIS E FORMULÁRIOS ---
     function abrirModalProdutoBase(id = null) {
         const form = document.getElementById('form-produto-base');
@@ -497,11 +522,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     function gerarSlug(texto) {
         return texto.toString().toLowerCase()
-            .replace(/\s+/g, '-')           // Substitui espaços por -
-            .replace(/[^\w\-]+/g, '')       // Remove todos os caracteres não-palavra
-            .replace(/\-\-+/g, '-')         // Substitui múltiplos - por um único -
-            .replace(/^-+/, '')             // Remove hífens do início
-            .replace(/-+$/, '');            // Remove hífens do final
+            .replace(/\s+/g, '-')
+            .replace(/[^\w\-]+/g, '')
+            .replace(/\-\-+/g, '-')
+            .replace(/^-+/, '')
+            .replace(/-+$/, '');
     }
 
     async function handleFormVariacaoSubmit(e) {
@@ -512,7 +537,7 @@ document.addEventListener('DOMContentLoaded', () => {
             produto_base_id: document.getElementById('v-pb-id').value, 
             nome: nomeVariacao, 
             preco: document.getElementById('v-preco').value, 
-            slug: gerarSlug(nomeVariacao) + '-' + Date.now() // Adiciona timestamp para garantir unicidade
+            slug: gerarSlug(nomeVariacao) + '-' + Date.now()
         };
         const method = id ? 'PUT' : 'POST'; 
         const url = id ? `${backendUrl}/variacoes/${id}` : `${backendUrl}/variacoes`; 
@@ -749,21 +774,15 @@ document.addEventListener('DOMContentLoaded', () => {
         tabButtons.forEach(button => {
             button.addEventListener('click', (e) => {
                 e.preventDefault();
-                const targetTabId = button.dataset.tab;
                 tabButtons.forEach(btn => btn.classList.remove('active'));
                 tabContents.forEach(content => {
-                    content.style.display = 'none';
                     content.classList.remove('active');
                 });
                 button.classList.add('active');
-                const targetContent = document.getElementById(targetTabId);
-                targetContent.style.display = 'block';
+                const targetContent = document.getElementById(button.dataset.tab);
                 targetContent.classList.add('active');
             });
         });
-        if(document.querySelector('.tab-button')) {
-            document.querySelector('.tab-button').click();
-        }
     }
     function inicializarDragAndDrop() {
         const container = document.getElementById('gerenciador-produtos');

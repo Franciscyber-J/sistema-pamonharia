@@ -9,7 +9,7 @@
             --cor-principal: #28a745; --cor-principal-hover: #218838; --cor-fundo: #161b22;
             --cor-superficie: #21262d; --cor-borda: #30363d; --cor-texto-principal: #e6edf3;
             --cor-texto-secundario: #8b949e; --cor-whatsapp: #128C7E; --cor-exclusao: #e74c3c; --cor-badge: #f85149;
-            --cor-aviso: #f39c12; 
+            --cor-aviso: #f39c12; --cor-loja-fechada: #e74c3c;
         }
         * { box-sizing: border-box; }
         html { scroll-behavior: smooth; }
@@ -20,6 +20,26 @@
         .header p { color: var(--cor-texto-secundario); margin-top: 5px; }
         .container { display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 30px; max-width: 1800px; margin-left: auto; margin-right: auto; }
         .menu { width: 100%; max-width: 1200px; }
+        /* --- NOVO ESTILO PARA O BANNER DE STATUS --- */
+        #store-status-banner {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            text-align: center;
+            font-size: 1.1em;
+            border: 1px solid;
+        }
+        #store-status-banner.aberta {
+            background-color: rgba(40, 167, 69, 0.15);
+            color: var(--cor-principal);
+            border-color: var(--cor-principal);
+        }
+        #store-status-banner.fechada {
+            background-color: rgba(231, 76, 60, 0.15);
+            color: var(--cor-loja-fechada);
+            border-color: var(--cor-loja-fechada);
+        }
         .product-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
         .product-card { background: var(--cor-superficie); border: 1px solid var(--cor-borda); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; transition: filter 0.3s ease, opacity 0.3s ease; }
         .product-card img { width: 100%; height: 180px; object-fit: cover; }
@@ -100,7 +120,13 @@
 <body>
     <header class="header"><h1>Saborosa Pamonha do <span>Goiás</span></h1><p>Escolha seus itens e confirme o pedido no WhatsApp!</p></header>
     <main class="container">
-        <section class="menu"><h2>Nosso Cardápio</h2><div class="product-list" id="product-list"><p>Verificando se a loja está aberta...</p></div></section>
+        <section class="menu">
+            <h2>Nosso Cardápio</h2>
+            <div id="store-status-banner"></div>
+            <div class="product-list" id="product-list">
+                <p>Verificando se a loja está aberta...</p>
+            </div>
+        </section>
         <aside class="cart-checkout-container" id="carrinho-secao"><h2>Seu Pedido</h2><ul id="cart-items"><li class="cart-empty-message">Seu carrinho está vazio.</li></ul>
         <div class="checkout-section">
             <h3>Como deseja receber?</h3>
@@ -147,13 +173,17 @@
     let selecaoComboModal = { combo: null, itens: {}, totalSelecionado: 0, upcharge: 0 };
     let cartTimeoutTimer = null;
     const TIMEOUT_DURATION = 5 * 60 * 1000;
+    // --- NOVAS VARIÁVEIS DE ESTADO ---
+    let lojaEstaAberta = false;
+    let mensagemLojaFechada = 'A loja está fechada no momento.';
 
     // --- ELEMENTOS DO DOM ---
     const floatingCartBtn = document.getElementById('floating-cart-btn');
     const cartItemCount = document.getElementById('cart-item-count');
     const productList = document.getElementById('product-list');
+    const storeStatusBanner = document.getElementById('store-status-banner');
 
-    // --- LÓGICA PRINCIPAL ---
+    // --- LÓGICA PRINCIPAL ATUALIZADA ---
     async function carregarPagina() {
         try {
             const statusRes = await fetch(`${backendUrl}/api/loja/status`);
@@ -161,13 +191,14 @@
             
             const dataStatus = await statusRes.json();
             
-            if (dataStatus.status === 'fechado') {
-                productList.innerHTML = `<div class="store-status">${dataStatus.mensagem}</div>`;
-                document.getElementById('carrinho-secao').style.display = 'none'; // Esconde o carrinho
-                return;
-            }
+            lojaEstaAberta = dataStatus.status === 'aberto';
+            mensagemLojaFechada = dataStatus.mensagem; // Salva a mensagem para usar no alerta
 
-            // Se a loja estiver aberta, continua para carregar o cardápio
+            // Atualiza o banner de status
+            storeStatusBanner.textContent = dataStatus.mensagem;
+            storeStatusBanner.className = lojaEstaAberta ? 'aberta' : 'fechada';
+            
+            // Carrega o cardápio independentemente do status, para o cliente poder visualizar
             const [produtosRes, combosRes] = await Promise.all([
                 fetch(`${backendUrl}/api/cardapio`),
                 fetch(`${backendUrl}/api/combos`)
@@ -178,9 +209,27 @@
             produtosCache = (await produtosRes.json()).data;
             combosCache = (await combosRes.json()).data;
             renderizarCardapio();
+
         } catch(error) {
             console.error("Erro ao carregar dados:", error);
             productList.innerHTML = '<p>Não foi possível carregar o cardápio. Tente novamente mais tarde.</p>';
+            storeStatusBanner.textContent = 'Erro ao verificar o status da loja.';
+            storeStatusBanner.className = 'fechada';
+        }
+    }
+
+    // --- NOVA FUNÇÃO PARA LIDAR COM CLIQUES NOS PRODUTOS ---
+    function handleProductClick(tipo, id) {
+        if (!lojaEstaAberta) {
+            alert(mensagemLojaFechada);
+            return;
+        }
+
+        // Se a loja estiver aberta, procede normalmente
+        if (tipo === 'combo') {
+            abrirModalCombo(id);
+        } else {
+            abrirModalVariacoes(id);
         }
     }
 
@@ -198,16 +247,17 @@
             const productCard = document.createElement('div');
             let isEsgotado = false;
             let buttonText = '';
-            let onclickAction = '';
+            
+            // O onclick agora chama a nova função handleProductClick
+            let onclickAction = `handleProductClick('${item.tipo}', ${item.id})`;
+
             if (item.tipo === 'combo') {
                 isEsgotado = verificarEstoqueCombo(item);
                 buttonText = isEsgotado ? 'Combo Indisponível' : 'Montar Combo';
-                onclickAction = `abrirModalCombo(${item.id})`;
             } else {
                 const totalEstoqueProduto = (item.variacoes || []).reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0);
                 isEsgotado = totalEstoqueProduto === 0;
                 buttonText = isEsgotado ? 'Esgotado' : 'Escolher Opções';
-                onclickAction = `abrirModalVariacoes(${item.id})`;
             }
             productCard.className = `product-card ${isEsgotado ? 'produto-esgotado' : ''}`;
             productCard.innerHTML = `
