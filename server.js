@@ -33,11 +33,11 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 // =================================================================================================
-// --- MIDDLEWARES E ROTAS DE PÁGINAS ---
+// --- MIDDLEWARES E ROTAS DE PÁGINAS (VERSÃO CORRIGIDA) ---
 // =================================================================================================
 app.use(cors());
 app.use(express.json());
-// MUDANÇA APLICADA AQUI para desativar o 'index.html' automático
+// A opção { index: false } impede que o express.static sirva o index.html na raiz
 app.use(express.static('public', { index: false }));
 
 // ROTA RAIZ AGORA APONTA PARA O DASHBOARD/LOGIN
@@ -54,6 +54,7 @@ app.get('/dashboard', (req, res) => {
 app.get('/cardapio', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
 
 // =================================================================================================
 // --- LÓGICA DE AUTENTICAÇÃO ---
@@ -102,7 +103,7 @@ const apenasAdmin = (req, res, next) => {
 };
 
 // =================================================================================================
-// --- ROTAS DA API (PRODUTOS, SETORES, ETC.) ---
+// --- ROTAS DA API ---
 // =================================================================================================
 const getCardapioCompleto = async () => {
     const sql = `
@@ -125,14 +126,16 @@ const getCardapioCompleto = async () => {
     return rows;
 };
 
-app.get('/cardapio', async (req, res) => {
+// API PARA O CARDÁPIO PÚBLICO
+app.get('/api/cardapio', async (req, res) => {
     try {
         const cardapio = await getCardapioCompleto();
         res.json({ data: cardapio });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/produtos', async (req, res) => {
+// As rotas de API não devem ter o mesmo nome das rotas de página
+app.get('/api/produtos', async (req, res) => {
     try {
         const sql = `
             SELECT v.id, v.slug, v.nome AS nome_variacao, v.preco, v.quantidade_estoque, pb.nome AS nome_base
@@ -146,7 +149,7 @@ app.get('/produtos', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/dashboard/produtos', protegerRota, async (req, res) => {
+app.get('/api/dashboard/produtos', protegerRota, async (req, res) => {
     try {
         const produtos = await getCardapioCompleto();
         res.json({ data: produtos });
@@ -343,11 +346,6 @@ app.post('/pedido', protegerRota, async (req, res) => {
     }
 });
 
-
-// =================================================================================================
-// --- ROTAS DA API PARA GERENCIAR COMBOS ---
-// =================================================================================================
-
 app.get('/api/combos', async (req, res) => {
     try {
         const sql = `
@@ -371,12 +369,6 @@ app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
 });
 
 app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
-    // --- LOGS DE DEPURAÇÃO ---
-    console.log('--- ROTA DE CRIAR COMBO ---');
-    console.log('req.file:', req.file);
-    console.log('req.body:', req.body);
-    // --- FIM DOS LOGS ---
-    
     if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
     const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
     if (!req.file) return res.status(400).json({ error: "A imagem para o combo é obrigatória." });
@@ -406,13 +398,6 @@ app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imag
 
 app.put('/api/dashboard/combos/:id', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     const { id } = req.params;
-
-    // --- LOGS DE DEPURAÇÃO ---
-    console.log(`--- ROTA DE EDITAR COMBO ID: ${id} ---`);
-    console.log('req.file:', req.file);
-    console.log('req.body:', req.body);
-    // --- FIM DOS LOGS ---
-
     if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
     const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
     let imagem_url;
@@ -455,10 +440,6 @@ app.delete('/api/dashboard/combos/:id', protegerRota, apenasAdmin, async (req, r
     } catch (err) { res.status(500).json({ error: 'Falha ao excluir o combo.' }); }
 });
 
-
-// =================================================================================================
-// --- INICIALIZAÇÃO DO SERVIDOR ---
-// =================================================================================================
 const iniciarServidor = async () => {
     app.listen(PORT, () => {
         console.log(`Servidor rodando na porta ${PORT}`);
