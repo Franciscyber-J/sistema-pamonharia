@@ -10,9 +10,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// --- CORREÇÃO APLICADA AQUI ---
-const { format } = require('date-fns');
-const { utcToZonedTime } = require('date-fns-tz');
+// A biblioteca de data/hora foi removida para evitar erros.
 
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
@@ -94,7 +92,7 @@ const apenasAdmin = (req, res, next) => {
 // --- ROTAS DA API ---
 // =================================================================================================
 
-// --- ROTAS PARA HORÁRIO DE FUNCIONAMENTO ---
+// --- ROTAS PARA HORÁRIO DE FUNCIONAMENTO (LÓGICA MANUAL) ---
 app.get('/api/loja/status', async (req, res) => {
     try {
         const { rows } = await db.query('SELECT aberta_manualmente, horarios_json FROM configuracao_loja WHERE id = 1');
@@ -110,16 +108,18 @@ app.get('/api/loja/status', async (req, res) => {
         }
         
         const horarios = JSON.parse(config.horarios_json);
-        const timeZone = 'America/Sao_Paulo';
-        const agora = new Date();
-        const diaDaSemana = agora.getDay().toString();
+        
+        // Lógica de data/hora manual para o fuso horário de Goiânia (UTC-3)
+        const agoraUTC = new Date();
+        const agoraGoiânia = new Date(agoraUTC.getTime() - (3 * 60 * 60 * 1000)); // Subtrai 3 horas
+        const diaDaSemana = agoraGoiânia.getUTCDay().toString(); // 0 = Domingo, 1 = Segunda...
+        const horaAtual = agoraGoiânia.getUTCHours().toString().padStart(2, '0') + ":" + agoraGoiânia.getUTCMinutes().toString().padStart(2, '0');
+        
         const horarioDeHoje = horarios[diaDaSemana];
 
         if (!horarioDeHoje || !horarioDeHoje.ativo) {
             return res.json({ status: 'fechado', mensagem: `Estamos fechados hoje.` });
         }
-
-        const horaAtual = format(utcToZonedTime(agora, timeZone), 'HH:mm');
         
         if (horaAtual >= horarioDeHoje.inicio && horaAtual < horarioDeHoje.fim) {
             return res.json({ status: 'aberto', mensagem: 'Estamos abertos!' });
@@ -128,7 +128,7 @@ app.get('/api/loja/status', async (req, res) => {
         }
 
     } catch (err) {
-        console.error("ERRO COMPLETO AO VERIFICAR STATUS:", err);
+        console.error("ERRO AO VERIFICAR STATUS:", err);
         res.status(500).json({ error: 'Erro ao verificar status da loja.' });
     }
 });
