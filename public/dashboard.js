@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const eyeClosedIcon = document.getElementById('eye-closed');
     const globalActionsMenu = document.getElementById('global-actions-menu');
     const gerenciadorProdutos = document.getElementById('gerenciador-produtos');
+    const btnAddProdutoBase = document.getElementById('btn-add-produto-base'); // <<-- Adicionado
 
     // --- LÓGICA DE AUTENTICAÇÃO E SESSÃO ---
     async function handleLogin(event) {
@@ -213,10 +214,10 @@ document.addEventListener('DOMContentLoaded', () => {
             cardDiv.innerHTML = `
                 <div class="produto-header" data-id="${pb.id}">
                     <span class="produto-header-toggle">▶</span>
-                    <img src="${backendUrl}${pb.imagem_url}" alt="${pb.nome}" class="produto-header-imagem">
+                    <img src="${pb.imagem_url}" alt="${pb.nome}" class="produto-header-imagem">
                     <div class="produto-header-info">
                         <h3>${pb.nome}</h3>
-                        <p>Setor: ${pb.setor_nome}</p>
+                        <p>Setor: ${pb.setor_nome || 'Não definido'}</p>
                     </div>
                     <div class="actions-cell" data-admin-only>
                         <button class="actions-menu-btn" data-action="toggle-actions-menu" data-type="base" data-id="${pb.id}" data-nome="${pb.nome}">⋮</button>
@@ -241,7 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return produtoBase.variacoes.map(v => `
             <tr class="${v.quantidade_estoque === 0 ? 'variacao-esgotada' : ''}">
                 <td>${v.nome}</td>
-                <td>R$ ${v.preco.toFixed(2).replace('.',',')}</td>
+                <td>R$ ${Number(v.preco).toFixed(2).replace('.',',')}</td>
                 <td>
                     <div class="stock-controls">
                         <button class="stock-btn" data-action="stock-minus" data-id="${v.id}">-</button>
@@ -268,8 +269,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('form-setor').addEventListener('submit', handleFormSetorSubmit);
         document.getElementById('lista-setores').addEventListener('click', handleAcoesSetor);
         document.getElementById('btn-limpar-form-setor').addEventListener('click', () => {
-             document.getElementById('form-setor').reset();
-             document.getElementById('setor-id').value = '';
+              document.getElementById('form-setor').reset();
+              document.getElementById('setor-id').value = '';
         });
     }
 
@@ -469,6 +470,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // <<-- CORREÇÃO APLICADA AQUI -->>
+    btnAddProdutoBase.addEventListener('click', () => {
+        abrirModalProdutoBase();
+    });
+
     gerenciadorProdutos.addEventListener('click', (e) => {
         const target = e.target;
         const button = target.closest('button');
@@ -509,14 +515,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     toggleIcon.style.transform = container.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(90deg)';
                 }
             },
-            'editar-base': () => abrirModalProdutoBase(id),
-            'duplicar-base': () => duplicarProdutoBase(id, nome),
-            'excluir-base': () => excluirProdutoBase(id, nome),
             'adicionar-variacao': () => abrirModalVariacao(null, id),
             'salvar-estoque': () => atualizarEstoque(id),
-            'editar-variacao': () => abrirModalVariacao(id, pbId),
-            'duplicar-variacao': () => duplicarVariacao(id, nome),
-            'excluir-variacao': () => excluirVariacao(id, nome),
             'stock-minus': () => {
                 const input = document.getElementById(`estoque-v-${id}`);
                 if (input && parseInt(input.value) > 0) input.value = parseInt(input.value) - 1;
@@ -557,7 +557,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     document.getElementById('form-produto-base').addEventListener('submit', async (e) => { e.preventDefault(); const id = document.getElementById('pb-id').value; const formData = new FormData(e.target); const method = id ? 'PUT' : 'POST'; const url = id ? `${backendUrl}/produtos_base/${id}` : `${backendUrl}/produtos_base`; try { const response = await fetchProtegido(url, { method, body: formData }); if (!response.ok) throw new Error((await response.json()).error); fecharModais(); await carregarTudo(); mostrarToast(`Produto base ${id ? 'atualizado' : 'criado'}!`, 'sucesso'); } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); } });
-    document.getElementById('form-variacao').addEventListener('submit', async (e) => { e.preventDefault(); const id = document.getElementById('v-id').value; const data = { produto_base_id: document.getElementById('v-pb-id').value, nome: document.getElementById('v-nome').value, preco: document.getElementById('v-preco').value, slug: document.getElementById('v-slug').value }; const method = id ? 'PUT' : 'POST'; const url = id ? `${backendUrl}/variacoes/${id}` : `${backendUrl}/variacoes`; try { const response = await fetchProtegido(url, { method, body: JSON.stringify(data) }); if (!response.ok) throw new Error((await response.json()).error); fecharModais(); await carregarTudo(); mostrarToast(`Variação ${id ? 'atualizada' : 'criada'}!`, 'sucesso'); } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); } });
+    document.getElementById('form-variacao').addEventListener('submit', async (e) => { e.preventDefault(); const id = document.getElementById('v-id').value; const data = { produto_base_id: document.getElementById('v-pb-id').value, nome: document.getElementById('v-nome').value, preco: document.getElementById('v-preco').value, slug: gerarSlug(document.getElementById('v-nome').value) }; const method = id ? 'PUT' : 'POST'; const url = id ? `${backendUrl}/variacoes/${id}` : `${backendUrl}/variacoes`; try { const response = await fetchProtegido(url, { method, body: JSON.stringify(data) }); if (!response.ok) throw new Error((await response.json()).error); fecharModais(); await carregarTudo(); mostrarToast(`Variação ${id ? 'atualizada' : 'criada'}!`, 'sucesso'); } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); } });
 
     setupTabs();
     setupModalCancelButtons();
