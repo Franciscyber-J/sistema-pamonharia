@@ -10,24 +10,22 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// A biblioteca de data/hora foi removida para evitar erros.
-
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+ cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+ api_key: process.env.CLOUDINARY_API_KEY,
+ api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
 const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'pamonharia',
-    format: 'webp',
-    transformation: [{ width: 500, height: 500, crop: 'limit' }]
-  },
+ cloudinary: cloudinary,
+ params: {
+   folder: 'pamonharia',
+   format: 'webp',
+   transformation: [{ width: 500, height: 500, crop: 'limit' }]
+ },
 });
 
 const upload = multer({ storage: storage });
@@ -92,27 +90,33 @@ const apenasAdmin = (req, res, next) => {
 // --- ROTAS DA API ---
 // =================================================================================================
 
-// --- ROTAS PARA HORÁRIO DE FUNCIONAMENTO (LÓGICA MANUAL) ---
+// --- ROTA DE STATUS DA LOJA ATUALIZADA ---
 app.get('/api/loja/status', async (req, res) => {
     try {
-        const { rows } = await db.query('SELECT aberta_manualmente, horarios_json FROM configuracao_loja WHERE id = 1');
+        const { rows } = await db.query('SELECT aberta_manualmente, fechada_manualmente, horarios_json FROM configuracao_loja WHERE id = 1');
         const config = rows[0];
+        
         if (!config) {
             return res.json({ status: 'fechado', mensagem: 'Configuração da loja não encontrada.' });
+        }
+
+        // --- NOVA HIERARQUIA DE VERIFICAÇÃO ---
+        if (config.fechada_manualmente) {
+            return res.json({ status: 'fechado', mensagem: 'Estamos temporariamente fechados. Voltamos em breve!' });
         }
         if (config.aberta_manualmente) {
             return res.json({ status: 'aberto', mensagem: 'Estamos abertos!' });
         }
+        
         if (!config.horarios_json) {
              return res.json({ status: 'fechado', mensagem: 'Horários de funcionamento não configurados.' });
         }
         
         const horarios = JSON.parse(config.horarios_json);
         
-        // Lógica de data/hora manual para o fuso horário de Goiânia (UTC-3)
         const agoraUTC = new Date();
-        const agoraGoiânia = new Date(agoraUTC.getTime() - (3 * 60 * 60 * 1000)); // Subtrai 3 horas
-        const diaDaSemana = agoraGoiânia.getUTCDay().toString(); // 0 = Domingo, 1 = Segunda...
+        const agoraGoiânia = new Date(agoraUTC.getTime() - (3 * 60 * 60 * 1000));
+        const diaDaSemana = agoraGoiânia.getUTCDay().toString();
         const horaAtual = agoraGoiânia.getUTCHours().toString().padStart(2, '0') + ":" + agoraGoiânia.getUTCMinutes().toString().padStart(2, '0');
         
         const horarioDeHoje = horarios[diaDaSemana];
@@ -132,6 +136,7 @@ app.get('/api/loja/status', async (req, res) => {
         res.status(500).json({ error: 'Erro ao verificar status da loja.' });
     }
 });
+
 app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
     try {
         const { rows } = await db.query('SELECT * FROM configuracao_loja WHERE id = 1');
@@ -140,20 +145,41 @@ app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
         res.status(500).json({ error: 'Erro ao buscar configurações.' });
     }
 });
+
+// --- ROTA DE ATUALIZAÇÃO GERAL (SOMENTE ADMIN) ATUALIZADA ---
 app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (req, res) => {
     try {
-        const { aberta_manualmente, horarios_json } = req.body;
+        const { aberta_manualmente, fechada_manualmente, horarios_json } = req.body;
         await db.query(
-            'UPDATE configuracao_loja SET aberta_manualmente = $1, horarios_json = $2 WHERE id = 1',
-            [aberta_manualmente, JSON.stringify(horarios_json)]
+            'UPDATE configuracao_loja SET aberta_manualmente = $1, fechada_manualmente = $2, horarios_json = $3 WHERE id = 1',
+            [aberta_manualmente, fechada_manualmente, JSON.stringify(horarios_json)]
         );
         res.json({ message: 'Configurações da loja atualizadas com sucesso!' });
     } catch (err) {
+        console.error("ERRO AO ATUALIZAR CONFIGURAÇÕES (ADMIN):", err);
         res.status(500).json({ error: 'Erro ao atualizar configurações.' });
     }
 });
 
-// --- OUTRAS ROTAS DA API ---
+// --- NOVA ROTA PARA OPERADORES E ADMINS ATUALIZAREM O STATUS MANUAL ---
+app.post('/api/dashboard/loja/status-manual', protegerRota, async (req, res) => {
+    try {
+        // Esta rota não usa 'apenasAdmin', permitindo que operadores a acessem
+        const { aberta_manualmente, fechada_manualmente } = req.body;
+        await db.query(
+            'UPDATE configuracao_loja SET aberta_manualmente = $1, fechada_manualmente = $2 WHERE id = 1',
+            [aberta_manualmente, fechada_manualmente]
+        );
+        res.json({ message: 'Status manual da loja atualizado com sucesso!' });
+    } catch (err) {
+        console.error("ERRO AO ATUALIZAR STATUS MANUAL:", err);
+        res.status(500).json({ error: 'Erro ao atualizar status manual da loja.' });
+    }
+});
+
+
+// --- OUTRAS ROTAS DA API (SEM ALTERAÇÃO) ---
+// [O restante do seu código do server.js permanece o mesmo]
 const getCardapioCompleto = async () => {
     const sql = `
         SELECT 
@@ -175,7 +201,6 @@ app.get('/api/cardapio', async (req, res) => {
     catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// As rotas de API não devem ter o mesmo nome das rotas de página
 app.get('/api/produtos', async (req, res) => {
     try {
         const sql = `
@@ -361,7 +386,7 @@ app.post('/dashboard/produtos/reordenar', protegerRota, apenasAdmin, async (req,
     }
 });
 
-app.post('/pedido', protegerRota, async (req, res) => {
+app.post('/pedido', async (req, res) => { // Removido protegerRota para testes, mas idealmente deveria ter uma chave de API para o bot
     const { itens } = req.body;
     if (!itens || !Array.isArray(itens) || itens.length === 0) {
         return res.status(400).json({ error: 'Formato de itens inválido.' });

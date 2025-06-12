@@ -24,8 +24,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const element = document.querySelector(selector);
             if (element) {
                 element.addEventListener(event, handler);
-            } else {
-                console.warn(`Elemento não encontrado para o seletor: ${selector}`);
             }
         };
 
@@ -47,17 +45,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         safeAddEventListener('#btn-add-produto-base', 'click', () => abrirModalProdutoBase());
         safeAddEventListener('#btn-add-combo', 'click', () => abrirModalCombo());
-
         safeAddEventListener('#gerenciador-produtos', 'click', handleAcoesProdutos);
         safeAddEventListener('#gerenciador-combos', 'click', handleAcoesCombos);
         safeAddEventListener('#global-actions-menu', 'click', handleMenuAcoesClick);
         safeAddEventListener('#lista-setores', 'click', handleAcoesSetor);
-
         safeAddEventListener('#form-produto-base', 'submit', handleFormProdutoSubmit);
         safeAddEventListener('#form-variacao', 'submit', handleFormVariacaoSubmit);
         safeAddEventListener('#form-setor', 'submit', handleFormSetorSubmit);
         safeAddEventListener('#form-combo', 'submit', handleFormComboSubmit);
-
         safeAddEventListener('#btn-add-regra', 'click', adicionarRegra);
         safeAddEventListener('#regra-tipo', 'change', toggleRegraInputs);
         safeAddEventListener('#regras-container', 'click', handleAcaoRegra);
@@ -160,35 +155,29 @@ document.addEventListener('DOMContentLoaded', () => {
             mostrarLogin();
         }
     }
-
-    // --- LÓGICA DE PERMISSÕES ATUALIZADA ---
+    
     function aplicarPermissoes() {
         const usuarioString = localStorage.getItem('usuario');
         if (!usuarioString) return;
         const usuario = JSON.parse(usuarioString);
         const isOperador = usuario.cargo === 'operador';
 
-        // Lógica para elementos gerais de admin
         document.querySelectorAll('[data-admin-only]').forEach(el => {
-            el.style.display = isOperador ? 'none' : '';
+            el.style.display = isOperador ? 'none' : 'block';
         });
 
-        // Garante que a aba de produtos esteja visível para o operador e seja a padrão
         const tabProdutosBtn = document.querySelector('.tab-button[data-tab="Produtos"]');
-        const tabProdutosContent = document.getElementById('Produtos');
-        if (tabProdutosBtn) tabProdutosBtn.style.display = '';
-        if (tabProdutosContent) tabProdutosContent.style.display = '';
+        if (tabProdutosBtn) tabProdutosBtn.style.display = 'block';
 
-        // Desabilita o drag-and-drop para operadores
         if (sortable) sortable.option("disabled", isOperador);
         document.querySelectorAll('.produto-header').forEach(el => {
             el.style.cursor = isOperador ? 'default' : 'grab';
         });
 
-        // Abre a primeira aba visível como padrão
+        // Garante que a primeira aba visível para o usuário seja ativada
         const firstVisibleTab = document.querySelector('.tab-button:not([style*="display: none"])');
-        if (firstVisibleTab) {
-            firstVisibleTab.click();
+        if (firstVisibleTab && !document.querySelector('.tab-button.active:not([style*="display: none"])')) {
+             firstVisibleTab.click();
         }
     }
 
@@ -297,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // --- LÓGICA ATUALIZADA PARA RENDERIZAR CONFIGURAÇÕES ---
+    // --- FUNÇÕES DE CONFIGURAÇÕES ATUALIZADAS ---
     function renderizarConfiguracoesLoja() {
         const container = document.getElementById('Configuracoes');
         const diasDaSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
@@ -329,10 +318,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="config-section">
                     <h3>Controle Manual</h3>
                     <div class="manual-override-container">
-                        <label for="aberta-manualmente">Forçar Abertura da Loja (ignora horários)</label>
+                        <label for="aberta-manualmente">Forçar Abertura (ignora horários)</label>
                         <label class="switch">
                             <input type="checkbox" id="aberta-manualmente">
                             <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="manual-override-container" style="margin-top: 15px; background-color: rgba(248, 81, 73, 0.1);">
+                        <label for="fechada-manualmente">Forçar Fechamento (ignora horários)</label>
+                        <label class="switch">
+                            <input type="checkbox" id="fechada-manualmente">
+                            <span class="slider" style="background-color: var(--cor-exclusao);"></span>
                         </label>
                     </div>
                 </div>
@@ -351,13 +347,35 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         
         popularFormConfiguracoes();
+        setupConfigEventListeners();
+    }
 
+    function setupConfigEventListeners() {
         document.getElementById('form-configuracoes').addEventListener('submit', handleFormConfigSubmit);
-        diasDaSemana.forEach((_, index) => {
-            document.getElementById(`ativo-${index}`).addEventListener('change', (e) => {
-                document.getElementById(`dia-container-${index}`).classList.toggle('inativo', !e.target.checked);
-            });
+        
+        const checkAberto = document.getElementById('aberta-manualmente');
+        const checkFechado = document.getElementById('fechada-manualmente');
+
+        checkAberto.addEventListener('change', () => {
+            if (checkAberto.checked) {
+                checkFechado.checked = false;
+            }
         });
+
+        checkFechado.addEventListener('change', () => {
+            if (checkFechado.checked) {
+                checkAberto.checked = false;
+            }
+        });
+
+        for (let i = 0; i < 7; i++) {
+            const ativoCheckbox = document.getElementById(`ativo-${i}`);
+            if (ativoCheckbox) {
+                ativoCheckbox.addEventListener('change', (e) => {
+                    document.getElementById(`dia-container-${i}`).classList.toggle('inativo', !e.target.checked);
+                });
+            }
+        }
     }
 
     function popularFormConfiguracoes() {
@@ -365,8 +383,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!config) return;
 
         document.getElementById('aberta-manualmente').checked = config.aberta_manualmente;
+        document.getElementById('fechada-manualmente').checked = config.fechada_manualmente;
         
-        // Acessa a seção de horários apenas se ela existir no DOM (para evitar erros no modo operador)
         const horariosGrid = document.querySelector('.horarios-grid');
         if (horariosGrid) {
             const horarios = JSON.parse(config.horarios_json || '{}');
@@ -386,45 +404,47 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleFormConfigSubmit(e) {
         e.preventDefault();
         
+        const usuario = JSON.parse(localStorage.getItem('usuario'));
+        if (!usuario) return;
+
         const aberta_manualmente = document.getElementById('aberta-manualmente').checked;
-        const horarios_json = {};
-        
-        const usuarioString = localStorage.getItem('usuario');
-        const usuario = JSON.parse(usuarioString);
-
-        // Se for admin, coleta os dados de horário. Se for operador, envia os horários existentes para não sobrescrevê-los.
-        if (usuario.cargo === 'admin') {
-            for (let i = 0; i < 7; i++) {
-                horarios_json[i] = {
-                    ativo: document.getElementById(`ativo-${i}`).checked,
-                    inicio: document.getElementById(`inicio-${i}`).value,
-                    fim: document.getElementById(`fim-${i}`).value,
-                };
-            }
-        } else {
-             // Operador apenas envia o JSON que já estava no cache para não corromper os dados
-            Object.assign(horarios_json, JSON.parse(cache.configuracoes.horarios_json || '{}'));
-        }
-
-        const data = { aberta_manualmente, horarios_json };
+        const fechada_manualmente = document.getElementById('fechada-manualmente').checked;
 
         try {
-            const response = await fetchProtegido(`${backendUrl}/api/dashboard/loja/configuracoes`, {
-                method: 'PUT',
-                body: JSON.stringify(data)
-            });
-            if (!response.ok) throw new Error((await response.json()).error);
+            if (usuario.cargo === 'admin') {
+                // Admin envia tudo
+                const horarios_json = {};
+                for (let i = 0; i < 7; i++) {
+                    horarios_json[i] = {
+                        ativo: document.getElementById(`ativo-${i}`).checked,
+                        inicio: document.getElementById(`inicio-${i}`).value,
+                        fim: document.getElementById(`fim-${i}`).value,
+                    };
+                }
+                const data = { aberta_manualmente, fechada_manualmente, horarios_json };
+                await fetchProtegido(`${backendUrl}/api/dashboard/loja/configuracoes`, {
+                    method: 'PUT',
+                    body: JSON.stringify(data)
+                });
+            } else {
+                // Operador envia apenas o status manual para a nova rota
+                const data = { aberta_manualmente, fechada_manualmente };
+                await fetchProtegido(`${backendUrl}/api/dashboard/loja/status-manual`, {
+                    method: 'POST',
+                    body: JSON.stringify(data)
+                });
+            }
             
-            cache.configuracoes.aberta_manualmente = aberta_manualmente;
-            cache.configuracoes.horarios_json = JSON.stringify(horarios_json);
-
-            mostrarToast('Configurações da loja salvas com sucesso!', 'sucesso');
+            await carregarTudo(); // Recarrega tudo para garantir consistência
+            mostrarToast('Configurações salvas com sucesso!', 'sucesso');
         } catch (error) {
-            mostrarToast(`Erro ao salvar configurações: ${error.message}`, 'erro');
+            mostrarToast(`Erro ao salvar: ${error.message}`, 'erro');
         }
     }
 
-    // O restante das funções permanece o mesmo...
+
+    // --- O RESTANTE DAS FUNÇÕES SEM ALTERAÇÃO ---
+    // (Cole aqui as funções de handleForm, abrirModais, handleAções, etc... que já te enviei anteriormente)
     // [ Funções de Modais, Handlers de Forms, Handlers de Ações, Utilitários ]
     // (O código completo para essas seções está omitido aqui para brevidade, mas deve ser mantido no seu arquivo final)
     // --- LÓGICA DOS MODAIS E FORMULÁRIOS ---
@@ -752,7 +772,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function toggleRegraInputs(){
-        const tipo = document.getElementById('regra-tipo').value;
+        const tipoSelect = document.getElementById('regra-tipo');
+        if(!tipoSelect) return;
+        const tipo = tipoSelect.value;
         document.getElementById('group-regra-setor').style.display = tipo === 'setor' ? 'block' : 'none';
         document.getElementById('group-regra-produto').style.display = tipo === 'produto' ? 'block' : 'none';
     }
@@ -764,7 +786,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function mostrarToast(mensagem, tipo = 'sucesso') {
         const toast = document.getElementById('toast-notification');
-        toast.textContent = mensagem; toast.className = 'toast';
+        toast.textContent = mensagem; toast.className = '';
         toast.classList.add(tipo, 'show');
         setTimeout(() => { toast.classList.remove('show');}, 3000);
     }
@@ -775,12 +797,10 @@ document.addEventListener('DOMContentLoaded', () => {
             button.addEventListener('click', (e) => {
                 e.preventDefault();
                 tabButtons.forEach(btn => btn.classList.remove('active'));
-                tabContents.forEach(content => {
-                    content.classList.remove('active');
-                });
+                tabContents.forEach(content => content.classList.remove('active'));
                 button.classList.add('active');
                 const targetContent = document.getElementById(button.dataset.tab);
-                targetContent.classList.add('active');
+                if (targetContent) targetContent.classList.add('active');
             });
         });
     }
