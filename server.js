@@ -4,7 +4,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const db = require('./database.js');
+const db = require('./database.js'); // Agora usa a conexão PostgreSQL
 const multer = require('multer');
 const path = require('path');
 const sharp = require('sharp');
@@ -22,7 +22,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// NOVA ROTA ADICIONADA AQUI
 // Rota para servir o cardápio (index.html) na raiz do site
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -47,24 +46,29 @@ const garantirPastaDeUploads = async () => {
 // --- LÓGICA DE AUTENTICAÇÃO ---
 // =================================================================================================
 
-app.post('/login', (req, res) => {
-    const { email, senha } = req.body;
-    if (!email || !senha) {
-        return res.status(400).json({ error: "Email e senha são obrigatórios." });
-    }
-    const sql = "SELECT * FROM usuarios WHERE email = ?";
-    db.get(sql, [email], async (err, usuario) => {
-        if (err) return res.status(500).json({ error: "Erro interno do servidor." });
+app.post('/login', async (req, res) => {
+    try {
+        const { email, senha } = req.body;
+        if (!email || !senha) {
+            return res.status(400).json({ error: "Email e senha são obrigatórios." });
+        }
+        const sql = "SELECT * FROM usuarios WHERE email = $1";
+        const { rows } = await db.query(sql, [email]);
+        const usuario = rows[0];
+
         if (!usuario) return res.status(401).json({ error: "Credenciais inválidas." });
 
         const senhaValida = await bcrypt.compare(senha, usuario.senha);
         if (!senhaValida) return res.status(401).json({ error: "Credenciais inválidas." });
-        
+
         const payload = { id: usuario.id, nome: usuario.nome, cargo: usuario.cargo };
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '8h' });
 
         res.json({ message: "Login bem-sucedido!", token: token, usuario: payload });
-    });
+    } catch (err) {
+        console.error("Erro no login:", err);
+        res.status(500).json({ error: "Erro interno do servidor." });
+    }
 });
 
 const protegerRota = (req, res, next) => {
@@ -88,230 +92,336 @@ const apenasAdmin = (req, res, next) => {
 };
 
 // =================================================================================================
-// --- ROTAS DA API (Versão corrigida, sem duplicatas) ---
+// --- ROTAS DA API ---
 // =================================================================================================
 
 // --- ROTAS PÚBLICAS ---
-app.get('/cardapio', (req, res) => {
-    const sql = `
-        SELECT pb.id, pb.nome, pb.descricao, pb.imagem_url, s.nome as setor_nome, s.id as setor_id,
-               (SELECT json_group_array(json_object('id', v.id, 'nome', v.nome, 'preco', v.preco, 'slug', v.slug, 'quantidade_estoque', v.quantidade_estoque))
-                FROM variacoes v WHERE v.produto_base_id = pb.id) as variacoes
-        FROM produtos_base pb
-        LEFT JOIN setores s ON pb.setor_id = s.id
-        ORDER BY pb.ordem, pb.nome`;
-    db.all(sql, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        const cardapio = rows.map(row => ({...row, variacoes: JSON.parse(row.variacoes || '[]')}));
-        res.json({ data: cardapio });
-    });
+app.get('/cardapio', async (req, res) => {
+    try {
+        const sql = `
+            SELECT 
+                pb.id, pb.nome, pb.descricao, pb.imagem_url, s.nome as setor_nome, s.id as setor_id,
+                COALESCE(
+                    (SELECT json_agg(
+                        json_build_object(
+                            'id', v.id, 'nome', v.nome, 'preco', v.preco, 
+                            'slug', v.slug, 'quantidade_estoque', v.quantidade_estoque
+                        ) ORDER BY v.id
+                    )
+                    FROM variacoes v WHERE v.produto_base_id = pb.id),
+                    '[]'::json
+                ) as variacoes
+            FROM produtos_base pb
+            LEFT JOIN setores s ON pb.setor_id = s.id
+            ORDER BY pb.ordem, pb.nome`;
+        const { rows } = await db.query(sql);
+        res.json({ data: rows });
+    } catch (err) {
+        console.error("Erro ao buscar cardápio:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.get('/produtos', (req, res) => {
-    const sql = `
-        SELECT v.id, v.slug, v.nome AS nome_variacao, v.preco, v.quantidade_estoque, pb.nome AS nome_base
-        FROM variacoes v JOIN produtos_base pb ON v.produto_base_id = pb.id`;
-    db.all(sql, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
+
+app.get('/produtos', async (req, res) => {
+    try {
+        const sql = `
+            SELECT v.id, v.slug, v.nome AS nome_variacao, v.preco, v.quantidade_estoque, pb.nome AS nome_base
+            FROM variacoes v JOIN produtos_base pb ON v.produto_base_id = pb.id`;
+        const { rows } = await db.query(sql);
         const data = rows.map(r => ({
             id: r.id, slug: r.slug, nome: `${r.nome_base} ${r.nome_variacao}`,
             preco: r.preco, quantidade_estoque: r.quantidade_estoque
         }));
         res.json({ data });
-    });
+    } catch (err) {
+        console.error("Erro ao buscar produtos:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // --- ROTAS PROTEGIDAS PARA OPERADORES E ADMINS ---
-app.get('/dashboard/produtos', protegerRota, (req, res) => {
-    const sql = `
-        SELECT pb.id, pb.nome, pb.descricao, pb.imagem_url, s.nome as setor_nome, s.id as setor_id,
-               (SELECT json_group_array(json_object('id', v.id, 'nome', v.nome, 'preco', v.preco, 'slug', v.slug, 'quantidade_estoque', v.quantidade_estoque))
-                FROM variacoes v WHERE v.produto_base_id = pb.id) as variacoes
-        FROM produtos_base pb LEFT JOIN setores s ON pb.setor_id = s.id
-        ORDER BY pb.ordem, pb.nome`;
-    db.all(sql, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        const produtos = rows.map(row => ({...row, variacoes: JSON.parse(row.variacoes || '[]')}));
-        res.json({ data: produtos });
-    });
-});
-
-app.get('/setores', protegerRota, (req, res) => {
-    db.all("SELECT * FROM setores ORDER BY nome", [], (err, rows) => {
-        if (err) { return res.status(500).json({ error: err.message }); }
+app.get('/dashboard/produtos', protegerRota, async (req, res) => {
+    // Reutiliza a mesma lógica complexa do cardápio público
+    try {
+        const sql = `
+            SELECT 
+                pb.id, pb.nome, pb.descricao, pb.imagem_url, s.nome as setor_nome, s.id as setor_id,
+                COALESCE(
+                    (SELECT json_agg(
+                        json_build_object(
+                            'id', v.id, 'nome', v.nome, 'preco', v.preco, 
+                            'slug', v.slug, 'quantidade_estoque', v.quantidade_estoque
+                        ) ORDER BY v.id
+                    )
+                    FROM variacoes v WHERE v.produto_base_id = pb.id),
+                    '[]'::json
+                ) as variacoes
+            FROM produtos_base pb
+            LEFT JOIN setores s ON pb.setor_id = s.id
+            ORDER BY pb.ordem, pb.nome`;
+        const { rows } = await db.query(sql);
         res.json({ data: rows });
-    });
+    } catch (err) {
+        console.error("Erro ao buscar produtos para o dashboard:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.post('/variacao/estoque', protegerRota, (req, res) => {
-    const { id, quantidade } = req.body;
-    db.run(`UPDATE variacoes SET quantidade_estoque = ? WHERE id = ?`, [quantidade, id], function(err) {
-        if (err) return res.status(500).json({ "error": err.message });
+
+app.get('/setores', protegerRota, async (req, res) => {
+    try {
+        const { rows } = await db.query("SELECT * FROM setores ORDER BY nome");
+        res.json({ data: rows });
+    } catch (err) {
+        console.error("Erro ao buscar setores:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+app.post('/variacao/estoque', protegerRota, async (req, res) => {
+    try {
+        const { id, quantidade } = req.body;
+        await db.query(`UPDATE variacoes SET quantidade_estoque = $1 WHERE id = $2`, [quantidade, id]);
         res.json({ message: `Estoque da variação atualizado.` });
-    });
+    } catch (err) {
+        console.error("Erro ao atualizar estoque:", err);
+        res.status(500).json({ "error": err.message });
+    }
 });
 
-app.post('/pedido', protegerRota, (req, res) => {
+app.post('/pedido', protegerRota, async (req, res) => {
     const { itens } = req.body;
-    if (!itens || !Array.isArray(itens)) return res.status(400).json({ error: 'Formato de itens inválido.' });
-    db.serialize(() => {
-        const stmt = db.prepare("UPDATE variacoes SET quantidade_estoque = quantidade_estoque - ? WHERE id = ? AND quantidade_estoque >= ?");
-        itens.forEach(item => {
-            stmt.run(item.qtd, item.id, item.qtd, function(err) {
-                if (err) console.error(`Erro ao atualizar estoque para item ${item.id}:`, err);
-                if (this.changes === 0) console.warn(`Estoque insuficiente ou item não encontrado para id ${item.id}.`);
-            });
-        });
-        stmt.finalize((err) => {
-            if (err) return res.status(500).json({ error: "Erro interno ao processar baixa de estoque." });
-            res.json({ message: "Processo de baixa de estoque concluído." });
-        });
-    });
+    if (!itens || !Array.isArray(itens) || itens.length === 0) {
+        return res.status(400).json({ error: 'Formato de itens inválido.' });
+    }
+
+    const client = await db.pool.connect(); // Usando a conexão do pool diretamente para transações
+    try {
+        await client.query('BEGIN');
+        for (const item of itens) {
+            const updateQuery = "UPDATE variacoes SET quantidade_estoque = quantidade_estoque - $1 WHERE id = $2 AND quantidade_estoque >= $1";
+            const result = await client.query(updateQuery, [item.qtd, item.id]);
+            if (result.rowCount === 0) {
+                // Se rowCount é 0, o estoque era insuficiente ou o item não existe.
+                throw new Error(`Estoque insuficiente para o item ID ${item.id}.`);
+            }
+        }
+        await client.query('COMMIT');
+        res.json({ message: "Processo de baixa de estoque concluído com sucesso." });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("Erro na transação de pedido, rollback executado:", err);
+        res.status(500).json({ error: "Erro interno ao processar baixa de estoque. A operação foi cancelada." });
+    } finally {
+        client.release();
+    }
 });
+
 
 // --- ROTAS PROTEGIDAS APENAS PARA ADMINS ---
-app.post('/dashboard/produtos/reordenar', protegerRota, apenasAdmin, (req, res) => {
+app.post('/dashboard/produtos/reordenar', protegerRota, apenasAdmin, async (req, res) => {
     const { order } = req.body;
-    if (!order || !Array.isArray(order)) { return res.status(400).json({ error: "Formato de ordem inválido." }); }
-    db.serialize(() => {
-        const stmt = db.prepare("UPDATE produtos_base SET ordem = ? WHERE id = ?");
-        order.forEach((id, index) => { stmt.run(index, id); });
-        stmt.finalize((err) => {
-            if (err) return res.status(500).json({ error: "Falha ao salvar a nova ordem." });
-            res.json({ message: "Ordem dos produtos atualizada com sucesso!" });
-        });
-    });
+    if (!order || !Array.isArray(order)) {
+        return res.status(400).json({ error: "Formato de ordem inválido." });
+    }
+    const client = await db.pool.connect();
+    try {
+        await client.query('BEGIN');
+        for (let i = 0; i < order.length; i++) {
+            await client.query("UPDATE produtos_base SET ordem = $1 WHERE id = $2", [i, order[i]]);
+        }
+        await client.query('COMMIT');
+        res.json({ message: "Ordem dos produtos atualizada com sucesso!" });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("Erro ao reordenar produtos:", err);
+        res.status(500).json({ error: "Falha ao salvar a nova ordem." });
+    } finally {
+        client.release();
+    }
 });
 
 app.post('/produtos_base', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
-    const { nome, descricao, setor_id } = req.body;
-    if (!req.file) return res.status(400).json({ error: "A imagem é obrigatória." });
-    const nomeArquivo = `${Date.now()}-${nome.replace(/\s+/g, '-').toLowerCase()}.webp`;
-    const caminhoArquivo = path.join(UPLOAD_DIR, nomeArquivo);
-    await sharp(req.file.buffer).resize(400).webp({ quality: 80 }).toFile(caminhoArquivo);
-    const imagem_url = `/images/${nomeArquivo}`;
-    db.run(`INSERT INTO produtos_base (nome, descricao, setor_id, imagem_url) VALUES (?, ?, ?, ?)`,
-        [nome, descricao, setor_id, imagem_url], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID });
-    });
-});
-
-app.put('/produtos_base/:id', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
-    const { nome, descricao, setor_id } = req.body;
-    let sql = `UPDATE produtos_base SET nome = ?, descricao = ?, setor_id = ?`;
-    let params = [nome, descricao, setor_id];
-    if (req.file) {
+    try {
+        const { nome, descricao, setor_id } = req.body;
+        if (!req.file) return res.status(400).json({ error: "A imagem é obrigatória." });
+        
         const nomeArquivo = `${Date.now()}-${nome.replace(/\s+/g, '-').toLowerCase()}.webp`;
         const caminhoArquivo = path.join(UPLOAD_DIR, nomeArquivo);
         await sharp(req.file.buffer).resize(400).webp({ quality: 80 }).toFile(caminhoArquivo);
         const imagem_url = `/images/${nomeArquivo}`;
-        sql += `, imagem_url = ?`;
-        params.push(imagem_url);
+        
+        const { rows } = await db.query(`INSERT INTO produtos_base (nome, descricao, setor_id, imagem_url) VALUES ($1, $2, $3, $4) RETURNING id`,
+            [nome, descricao, setor_id, imagem_url]);
+        res.status(201).json({ id: rows[0].id });
+    } catch (err) {
+        console.error("Erro ao criar produto base:", err);
+        res.status(500).json({ error: err.message });
     }
-    sql += ` WHERE id = ?`;
-    params.push(req.params.id);
-    db.run(sql, params, (err) => {
-        if (err) return res.status(500).json({ error: err.message });
+});
+
+app.put('/produtos_base/:id', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { nome, descricao, setor_id } = req.body;
+        
+        let imagem_url;
+        if (req.file) {
+            const nomeArquivo = `${Date.now()}-${nome.replace(/\s+/g, '-').toLowerCase()}.webp`;
+            const caminhoArquivo = path.join(UPLOAD_DIR, nomeArquivo);
+            await sharp(req.file.buffer).resize(400).webp({ quality: 80 }).toFile(caminhoArquivo);
+            imagem_url = `/images/${nomeArquivo}`;
+        }
+
+        let sql = 'UPDATE produtos_base SET nome = $1, descricao = $2, setor_id = $3';
+        const params = [nome, descricao, setor_id];
+        
+        if(imagem_url) {
+            sql += ', imagem_url = $4 WHERE id = $5';
+            params.push(imagem_url, id);
+        } else {
+            sql += ' WHERE id = $4';
+            params.push(id);
+        }
+        
+        await db.query(sql, params);
         res.json({ message: 'Produto base atualizado!' });
-    });
+    } catch (err) {
+        console.error("Erro ao atualizar produto base:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.delete('/produtos_base/:id', protegerRota, apenasAdmin, (req, res) => {
-    db.run(`DELETE FROM produtos_base WHERE id = ?`, [req.params.id], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
+app.delete('/produtos_base/:id', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        await db.query(`DELETE FROM produtos_base WHERE id = $1`, [req.params.id]);
         res.json({ message: 'Produto base e suas variações foram excluídos.' });
-    });
+    } catch (err) {
+        console.error("Erro ao deletar produto base:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.post('/variacoes', protegerRota, apenasAdmin, (req, res) => {
-    const { produto_base_id, nome, slug, preco } = req.body;
-    db.run(`INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES (?, ?, ?, ?, 0)`,
-        [produto_base_id, nome, slug, preco], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID });
-    });
+app.post('/variacoes', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        const { produto_base_id, nome, slug, preco } = req.body;
+        const { rows } = await db.query(`INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, 0) RETURNING id`,
+            [produto_base_id, nome, slug, preco]);
+        res.status(201).json({ id: rows[0].id });
+    } catch (err) {
+        console.error("Erro ao criar variação:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.put('/variacoes/:id', protegerRota, apenasAdmin, (req, res) => {
-    const { nome, slug, preco } = req.body;
-    db.run(`UPDATE variacoes SET nome = ?, slug = ?, preco = ? WHERE id = ?`,
-        [nome, slug, preco, req.params.id], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
+app.put('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        const { nome, slug, preco } = req.body;
+        await db.query(`UPDATE variacoes SET nome = $1, slug = $2, preco = $3 WHERE id = $4`,
+            [nome, slug, preco, req.params.id]);
         res.json({ message: 'Variação atualizada!' });
-    });
+    } catch (err) {
+        console.error("Erro ao atualizar variação:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.delete('/variacoes/:id', protegerRota, apenasAdmin, (req, res) => {
-    db.run(`DELETE FROM variacoes WHERE id = ?`, [req.params.id], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
+app.delete('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        await db.query(`DELETE FROM variacoes WHERE id = $1`, [req.params.id]);
         res.json({ message: 'Variação excluída.' });
-    });
+    } catch (err) {
+        console.error("Erro ao deletar variação:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.post('/variacoes/:id/duplicar', protegerRota, apenasAdmin, (req, res) => {
-    const id = req.params.id;
-    db.get('SELECT * FROM variacoes WHERE id = ?', [id], (err, variacao) => {
-        if (err) return res.status(500).json({ error: err.message });
+// As rotas de duplicar podem ser mais complexas com transações, mantendo-as mais simples por agora
+// Para uma versão de produção robusta, elas também deveriam estar em uma transação.
+app.post('/variacoes/:id/duplicar', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        const { rows } = await db.query('SELECT * FROM variacoes WHERE id = $1', [req.params.id]);
+        const variacao = rows[0];
         if (!variacao) return res.status(404).json({ error: "Variação não encontrada." });
+
         const novoNome = `${variacao.nome} (cópia)`;
         const novoSlug = `${variacao.slug}-copia-${Date.now()}`;
-        db.run('INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES (?, ?, ?, ?, ?)',
-            [variacao.produto_base_id, novoNome, novoSlug, variacao.preco, variacao.quantidade_estoque], function(err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ message: 'Variação duplicada com sucesso!', newId: this.lastID });
-        });
-    });
+        
+        const newRows = await db.query('INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+            [variacao.produto_base_id, novoNome, novoSlug, variacao.preco, variacao.quantidade_estoque]);
+        
+        res.json({ message: 'Variação duplicada com sucesso!', newId: newRows[0].id });
+    } catch (err) {
+        console.error("Erro ao duplicar variação:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.post('/produtos_base/:id/duplicar', protegerRota, apenasAdmin, (req, res) => {
-    const id = req.params.id;
-    db.serialize(() => {
-        db.get('SELECT * FROM produtos_base WHERE id = ?', [id], (err, produto) => {
-            if (err) return res.status(500).json({ error: err.message });
-            if (!produto) return res.status(404).json({ error: "Produto base não encontrado." });
-            const novoNome = `${produto.nome} (cópia)`;
-            db.run('INSERT INTO produtos_base (nome, descricao, imagem_url, setor_id) VALUES (?, ?, ?, ?)',
-                [novoNome, produto.descricao, produto.imagem_url, produto.setor_id], function(err) {
-                if (err) return res.status(500).json({ error: err.message });
-                const novoProdutoBaseId = this.lastID;
-                db.all('SELECT * FROM variacoes WHERE produto_base_id = ?', [id], (err, variacoes) => {
-                    if (err) return res.status(500).json({ error: err.message });
-                    const stmt = db.prepare('INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES (?, ?, ?, ?, ?)');
-                    variacoes.forEach((v, index) => {
-                        const novoSlug = `${v.slug}-copia-${Date.now()}-${index}`;
-                        stmt.run(novoProdutoBaseId, v.nome, novoSlug, v.preco, v.quantidade_estoque);
-                    });
-                    stmt.finalize((err) => {
-                        if (err) return res.status(500).json({ error: "Erro ao finalizar a duplicação de variações."});
-                        res.json({ message: 'Produto base e suas variações duplicados com sucesso!', newId: novoProdutoBaseId });
-                    });
-                });
-            });
-        });
-    });
+app.post('/produtos_base/:id/duplicar', protegerRota, apenasAdmin, async (req, res) => {
+    // Esta lógica é complexa e idealmente necessita de uma transação.
+    // Simplificando por agora.
+    const client = await db.pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { rows: produtoRows } = await client.query('SELECT * FROM produtos_base WHERE id = $1', [req.params.id]);
+        const produto = produtoRows[0];
+        if (!produto) return res.status(404).json({ error: "Produto base não encontrado." });
+        
+        const novoNome = `${produto.nome} (cópia)`;
+        const { rows: newProdutoRows } = await client.query('INSERT INTO produtos_base (nome, descricao, imagem_url, setor_id) VALUES ($1, $2, $3, $4) RETURNING id',
+            [novoNome, produto.descricao, produto.imagem_url, produto.setor_id]);
+        const novoProdutoBaseId = newProdutoRows[0].id;
+
+        const { rows: variacoes } = await client.query('SELECT * FROM variacoes WHERE produto_base_id = $1', [req.params.id]);
+        for(const v of variacoes) {
+            const novoSlug = `${v.slug}-copia-${Date.now()}`;
+            await client.query('INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, $5)',
+                [novoProdutoBaseId, v.nome, novoSlug, v.preco, v.quantidade_estoque]);
+        }
+        await client.query('COMMIT');
+        res.json({ message: 'Produto base e suas variações duplicados com sucesso!', newId: novoProdutoBaseId });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("Erro ao duplicar produto base:", err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
 });
 
-app.post('/setores', protegerRota, apenasAdmin, (req, res) => {
-    db.run(`INSERT INTO setores (nome) VALUES (?)`, [req.body.nome], function(err) {
-        if (err) { return res.status(500).json({ error: err.message }); }
-        res.json({ id: this.lastID });
-    });
+
+app.post('/setores', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        const { rows } = await db.query(`INSERT INTO setores (nome) VALUES ($1) RETURNING id`, [req.body.nome]);
+        res.status(201).json({ id: rows[0].id });
+    } catch (err) {
+        console.error("Erro ao criar setor:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.put('/setores/:id', protegerRota, apenasAdmin, (req, res) => {
-    db.run(`UPDATE setores SET nome = ? WHERE id = ?`, [req.body.nome, req.params.id], function(err) {
-        if (err) { return res.status(500).json({ error: err.message }); }
+app.put('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        await db.query(`UPDATE setores SET nome = $1 WHERE id = $2`, [req.body.nome, req.params.id]);
         res.json({ message: "Setor atualizado." });
-    });
+    } catch (err) {
+        console.error("Erro ao atualizar setor:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.delete('/setores/:id', protegerRota, apenasAdmin, (req, res) => {
-    db.run(`DELETE FROM setores WHERE id = ?`, [req.params.id], function(err) {
-        if (err) { return res.status(500).json({ error: err.message }); }
+app.delete('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        await db.query(`DELETE FROM setores WHERE id = $1`, [req.params.id]);
         res.json({ message: "Setor excluído." });
-    });
+    } catch (err) {
+        console.error("Erro ao deletar setor:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
+
 
 const iniciarServidor = async () => {
     await garantirPastaDeUploads();
