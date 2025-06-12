@@ -9,6 +9,7 @@ const multer = require('multer');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { zonedTimeToUtc, utcToZonedTime, format } = require('date-fns-tz'); // NOVA FERRAMENTA DE FUSO HORÁRIO
 
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
@@ -33,28 +34,23 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 // =================================================================================================
-// --- MIDDLEWARES E ROTAS DE PÁGINAS (VERSÃO CORRIGIDA) ---
+// --- MIDDLEWARES E ROTAS DE PÁGINAS ---
 // =================================================================================================
 app.use(cors());
 app.use(express.json());
-// A opção { index: false } impede que o express.static sirva o index.html na raiz
 app.use(express.static('public', { index: false }));
 
-// ROTA RAIZ AGORA APONTA PARA O DASHBOARD/LOGIN
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// ROTA PARA O DASHBOARD (APONTA PARA O MESMO ARQUIVO)
 app.get('/dashboard', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// ROTA PARA O CARDÁPIO DO CLIENTE
 app.get('/cardapio', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-
 
 // =================================================================================================
 // --- LÓGICA DE AUTENTICAÇÃO ---
@@ -67,17 +63,13 @@ app.post('/login', async (req, res) => {
         }
         const { rows } = await db.query("SELECT * FROM usuarios WHERE email = $1", [email]);
         const usuario = rows[0];
-
         if (!usuario) return res.status(401).json({ error: "Credenciais inválidas." });
-
         const senhaValida = await bcrypt.compare(senha, usuario.senha);
         if (!senhaValida) return res.status(401).json({ error: "Credenciais inválidas." });
-
         const payload = { id: usuario.id, nome: usuario.nome, cargo: usuario.cargo };
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '8h' });
         res.json({ message: "Login bem-sucedido!", token, usuario });
     } catch (err) {
-        console.error("Erro no login:", err);
         res.status(500).json({ error: "Erro interno do servidor." });
     }
 });
@@ -86,7 +78,6 @@ const protegerRota = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (!token) return res.sendStatus(401);
-
     jwt.verify(token, process.env.JWT_SECRET, (err, usuario) => {
         if (err) return res.sendStatus(403);
         req.usuario = usuario;
@@ -101,6 +92,75 @@ const apenasAdmin = (req, res, next) => {
         res.status(403).json({ error: "Acesso negado. Recurso restrito a administradores." });
     }
 };
+
+// =================================================================================================
+// --- ROTAS DA API ---
+// =================================================================================================
+
+// --- NOVAS ROTAS PARA HORÁRIO DE FUNCIONAMENTO ---
+
+// Rota pública para o cliente verificar o status da loja
+app.get('/api/loja/status', async (req, res) => {
+    try {
+        const { rows } = await db.query('SELECT aberta_manualmente, horarios_json FROM configuracao_loja WHERE id = 1');
+        const config = rows[0];
+        if (!config) {
+            return res.json({ status: 'fechado', mensagem: 'Configuração da loja não encontrada.' });
+        }
+
+        if (config.aberta_manualmente) {
+            return res.json({ status: 'aberto', mensagem: 'Estamos abertos!' });
+        }
+
+        const horarios = JSON.parse(config.horarios_json);
+        const timeZone = 'America/Sao_Paulo';
+        const agora = new Date();
+        const diaDaSemana = agora.getDay().toString(); // 0 = Domingo, 1 = Segunda, ...
+        
+        const horarioDeHoje = horarios[diaDaSemana];
+
+        if (!horarioDeHoje || !horarioDeHoje.ativo) {
+            return res.json({ status: 'fechado', mensagem: `Estamos fechados hoje.` });
+        }
+
+        const horaAtual = format(utcToZonedTime(agora, timeZone), 'HH:mm');
+        
+        if (horaAtual >= horarioDeHoje.inicio && horaAtual < horarioDeHoje.fim) {
+            return res.json({ status: 'aberto', mensagem: 'Estamos abertos!' });
+        } else {
+            return res.json({ status: 'fechado', mensagem: `Nosso horário hoje é das ${horarioDeHoje.inicio} às ${horarioDeHoje.fim}.` });
+        }
+
+    } catch (err) {
+        console.error("Erro ao verificar status da loja:", err);
+        res.status(500).json({ error: 'Erro ao verificar status da loja.' });
+    }
+});
+
+// Rota para o dashboard buscar a configuração completa
+app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
+    try {
+        const { rows } = await db.query('SELECT * FROM configuracao_loja WHERE id = 1');
+        res.json(rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao buscar configurações.' });
+    }
+});
+
+// Rota para o dashboard atualizar a configuração
+app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        const { aberta_manualmente, horarios_json } = req.body;
+        await db.query(
+            'UPDATE configuracao_loja SET aberta_manualmente = $1, horarios_json = $2 WHERE id = 1',
+            [aberta_manualmente, JSON.stringify(horarios_json)]
+        );
+        res.json({ message: 'Configurações da loja atualizadas com sucesso!' });
+    } catch (err) {
+        console.error("Erro ao atualizar configurações:", err);
+        res.status(500).json({ error: 'Erro ao atualizar configurações.' });
+    }
+});
 
 // =================================================================================================
 // --- ROTAS DA API ---
