@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- ELEMENTOS E VARIÁVEIS GLOBAIS ---
-    const backendUrl = 'http://localhost:3000';
+    const backendUrl = 'https://pamonharia-servidor.onrender.com';
     let cache = { produtos: [], setores: [] };
     let sortable = null;
 
