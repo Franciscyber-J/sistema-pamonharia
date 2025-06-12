@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- ELEMENTOS E VARIÁVEIS GLOBAIS ---
     const backendUrl = 'https://pamonhariasaborosa.expertbr.com'; // ATUALIZADO PARA O DOMÍNIO FINAL
-    let cache = { produtos: [], setores: [], combos: [] };
+    let cache = { produtos: [], setores: [], combos: [], configuracoes: {} }; // Cache para configurações
     let sortable = null;
     let regrasTemporarias = [];
 
@@ -36,14 +36,14 @@ document.addEventListener('DOMContentLoaded', () => {
         safeAddEventListener('#form-login', 'submit', handleLogin);
         safeAddEventListener('#btn-logout', 'click', handleLogout);
         safeAddEventListener('#toggle-senha', 'click', () => {
-             const input = document.getElementById('login-senha');
-             const eyeOpen = document.getElementById('eye-open');
-             const eyeClosed = document.getElementById('eye-closed');
-             if(!input || !eyeOpen || !eyeClosed) return;
-             const isPassword = input.type === 'password';
-             input.type = isPassword ? 'text' : 'password';
-             eyeOpen.style.display = isPassword ? 'none' : 'block';
-             eyeClosed.style.display = isPassword ? 'block' : 'none';
+            const input = document.getElementById('login-senha');
+            const eyeOpen = document.getElementById('eye-open');
+            const eyeClosed = document.getElementById('eye-closed');
+            if(!input || !eyeOpen || !eyeClosed) return;
+            const isPassword = input.type === 'password';
+            input.type = isPassword ? 'text' : 'password';
+            eyeOpen.style.display = isPassword ? 'none' : 'block';
+            eyeClosed.style.display = isPassword ? 'block' : 'none';
         });
 
         setupTabs();
@@ -65,8 +65,8 @@ document.addEventListener('DOMContentLoaded', () => {
         safeAddEventListener('#btn-add-regra', 'click', adicionarRegra);
         safeAddEventListener('#regra-tipo', 'change', toggleRegraInputs);
         safeAddEventListener('#regras-container', 'click', handleAcaoRegra);
-
-         document.addEventListener('click', (e) => {
+        
+        document.addEventListener('click', (e) => {
             if (!e.target.closest('.actions-menu-btn') && !e.target.closest('#global-actions-menu')) {
                 fecharMenuAcoes();
             }
@@ -77,20 +77,24 @@ document.addEventListener('DOMContentLoaded', () => {
     async function carregarTudo() {
         try {
             mostrarToast('Carregando dados...', 'info');
-            const [setoresRes, produtosRes, combosRes] = await Promise.all([
+            // ADICIONADO FETCH PARA CONFIGURAÇÕES
+            const [setoresRes, produtosRes, combosRes, configRes] = await Promise.all([
                 fetchProtegido(`${backendUrl}/setores`),
                 fetchProtegido(`${backendUrl}/api/dashboard/produtos`),
-                fetchProtegido(`${backendUrl}/api/dashboard/combos`)
+                fetchProtegido(`${backendUrl}/api/dashboard/combos`),
+                fetchProtegido(`${backendUrl}/api/dashboard/loja/configuracoes`)
             ]);
-            if(!setoresRes.ok || !produtosRes.ok || !combosRes.ok) throw new Error("Falha ao carregar dados do servidor.");
+            if(!setoresRes.ok || !produtosRes.ok || !combosRes.ok || !configRes.ok) throw new Error("Falha ao carregar dados do servidor.");
             
             cache.setores = (await setoresRes.json()).data;
             cache.produtos = (await produtosRes.json()).data;
             cache.combos = (await combosRes.json()).data;
+            cache.configuracoes = await configRes.json(); // GUARDA AS CONFIGURAÇÕES NO CACHE
             
             renderizarGerenciadorProdutos();
             renderizarGerenciadorSetores();
             renderizarGerenciadorCombos();
+            renderizarConfiguracoesLoja(); // CHAMA A NOVA FUNÇÃO DE RENDERIZAÇÃO
 
             inicializarDragAndDrop();
             aplicarPermissoes();
@@ -118,7 +122,6 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('authToken', data.token);
             localStorage.setItem('usuario', JSON.stringify(data.usuario));
             
-            // ATUALIZA A URL SEM RECARREGAR A PÁGINA
             history.pushState(null, '', '/dashboard');
             
             mostrarDashboard();
@@ -131,10 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleLogout() {
         localStorage.removeItem('authToken');
         localStorage.removeItem('usuario');
-        
-        // ATUALIZA A URL PARA A RAIZ APÓS O LOGOUT
         history.pushState(null, '', '/');
-        
         mostrarLogin();
     }
     
@@ -153,14 +153,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const caminho = window.location.pathname;
 
         if (token) {
-            // Se tem token e não está na URL /dashboard, força a URL correta
             if (caminho !== '/dashboard') {
                 history.replaceState(null, '', '/dashboard');
             }
             mostrarDashboard();
-            carregarTudo(); // Adicionado para carregar os dados ao recarregar a página
+            carregarTudo();
         } else {
-            // Se não tem token e não está na raiz, força a URL de login
             if (caminho !== '/') {
                 history.replaceState(null, '', '/');
             }
@@ -259,8 +257,8 @@ document.addEventListener('DOMContentLoaded', () => {
             listaUl.innerHTML += `<li><span>${setor.nome}</span><div class="actions-cell"><button class="edit-btn btn-sm" data-action="editar-setor" data-id="${setor.id}" data-nome="${setor.nome}">Editar</button><button class="delete-btn btn-sm" data-action="excluir-setor" data-id="${setor.id}" data-nome="${setor.nome}">Excluir</button></div></li>`;
         });
         document.querySelector('#btn-limpar-form-setor').addEventListener('click', () => {
-              document.querySelector('#form-setor').reset();
-              document.querySelector('#setor-id').value = '';
+             document.querySelector('#form-setor').reset();
+             document.querySelector('#setor-id').value = '';
         });
     }
 
@@ -287,36 +285,123 @@ document.addEventListener('DOMContentLoaded', () => {
             gerenciadorCombos.appendChild(cardDiv);
         });
     }
-
-    function renderizarRegrasCombo() {
-        const container = document.getElementById('regras-container');
-        container.innerHTML = '<h4>Regras Atuais:</h4>';
-        if (regrasTemporarias.length === 0) {
-            container.innerHTML += '<p>Nenhuma regra adicionada.</p>';
-            return;
-        }
-        const lista = document.createElement('ul');
-        lista.className = 'regras-lista';
-        regrasTemporarias.forEach((regra, index) => {
-            let nomeAlvo = '';
-            if (regra.setor_id_alvo) {
-                const setor = cache.setores.find(s => s.id == regra.setor_id_alvo);
-                nomeAlvo = `Setor: ${setor ? setor.nome : 'Desconhecido'}`;
-            } else if (regra.produto_base_id_alvo) {
-                const produto = cache.produtos.find(p => p.id == regra.produto_base_id_alvo);
-                nomeAlvo = `Produto: ${produto ? produto.nome : 'Desconhecido'}`;
-            }
-            const upchargeTexto = regra.upcharge > 0 ? ` (Acréscimo: R$ ${Number(regra.upcharge).toFixed(2).replace('.',',')})` : '';
-            lista.innerHTML += `
-                <li>
-                    <span>${nomeAlvo}${upchargeTexto}</span>
-                    <button type="button" class="delete-btn btn-sm" data-action="remover-regra" data-index="${index}">Remover</button>
-                </li>
-            `;
-        });
-        container.appendChild(lista);
-    }
     
+    // --- NOVAS FUNÇÕES PARA GERENCIAR HORÁRIOS ---
+    function renderizarConfiguracoesLoja() {
+        const container = document.getElementById('Configuracoes');
+        const diasDaSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+        
+        let htmlHorarios = diasDaSemana.map((dia, index) => `
+            <div class="dia-horario" id="dia-container-${index}">
+                <div class="dia-horario-header">
+                    <strong>${dia}</strong>
+                    <label class="switch">
+                        <input type="checkbox" id="ativo-${index}">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="dia-horario-body">
+                    <div>
+                        <label for="inicio-${index}">Início</label>
+                        <input type="time" id="inicio-${index}">
+                    </div>
+                    <div>
+                        <label for="fim-${index}">Fim</label>
+                        <input type="time" id="fim-${index}">
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <form id="form-configuracoes">
+                <div class="config-section">
+                    <h3>Controle Manual</h3>
+                    <div class="manual-override-container">
+                        <label for="aberta-manualmente">Forçar Abertura da Loja (ignora horários)</label>
+                        <label class="switch">
+                            <input type="checkbox" id="aberta-manualmente">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h3>Horários de Funcionamento Programados</h3>
+                    <div class="horarios-grid">
+                        ${htmlHorarios}
+                    </div>
+                </div>
+                
+                <div class="form-buttons" style="margin-top: 20px;">
+                    <button type="submit" class="save-btn">Salvar Configurações</button>
+                </div>
+            </form>
+        `;
+        
+        popularFormConfiguracoes();
+
+        // Adiciona os event listeners após renderizar
+        document.getElementById('form-configuracoes').addEventListener('submit', handleFormConfigSubmit);
+        diasDaSemana.forEach((_, index) => {
+            document.getElementById(`ativo-${index}`).addEventListener('change', (e) => {
+                document.getElementById(`dia-container-${index}`).classList.toggle('inativo', !e.target.checked);
+            });
+        });
+    }
+
+    function popularFormConfiguracoes() {
+        const config = cache.configuracoes;
+        if (!config) return;
+
+        document.getElementById('aberta-manualmente').checked = config.aberta_manualmente;
+        
+        const horarios = JSON.parse(config.horarios_json || '{}');
+        for (let i = 0; i < 7; i++) {
+            const diaConfig = horarios[i];
+            if (diaConfig) {
+                const ativoCheckbox = document.getElementById(`ativo-${i}`);
+                ativoCheckbox.checked = diaConfig.ativo;
+                document.getElementById(`inicio-${i}`).value = diaConfig.inicio;
+                document.getElementById(`fim-${i}`).value = diaConfig.fim;
+                document.getElementById(`dia-container-${i}`).classList.toggle('inativo', !diaConfig.ativo);
+            }
+        }
+    }
+
+    async function handleFormConfigSubmit(e) {
+        e.preventDefault();
+        
+        const aberta_manualmente = document.getElementById('aberta-manualmente').checked;
+        const horarios_json = {};
+
+        for (let i = 0; i < 7; i++) {
+            horarios_json[i] = {
+                ativo: document.getElementById(`ativo-${i}`).checked,
+                inicio: document.getElementById(`inicio-${i}`).value,
+                fim: document.getElementById(`fim-${i}`).value,
+            };
+        }
+
+        const data = { aberta_manualmente, horarios_json };
+
+        try {
+            const response = await fetchProtegido(`${backendUrl}/api/dashboard/loja/configuracoes`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) throw new Error((await response.json()).error);
+            
+            // Atualiza o cache local para refletir a mudança
+            cache.configuracoes.aberta_manualmente = aberta_manualmente;
+            cache.configuracoes.horarios_json = JSON.stringify(horarios_json);
+
+            mostrarToast('Configurações da loja salvas com sucesso!', 'sucesso');
+        } catch (error) {
+            mostrarToast(`Erro ao salvar configurações: ${error.message}`, 'erro');
+        }
+    }
+
     // --- LÓGICA DOS MODAIS E FORMULÁRIOS ---
     function abrirModalProdutoBase(id = null) {
         const form = document.getElementById('form-produto-base');
@@ -390,9 +475,17 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleFormProdutoSubmit(e) {
         e.preventDefault(); 
         const id = document.getElementById('pb-id').value;
-        const formData = new FormData(e.target);
+        const formData = new FormData();
+        formData.append('nome', document.getElementById('pb-nome').value);
+        formData.append('descricao', document.getElementById('pb-descricao').value);
+        formData.append('setor_id', document.getElementById('pb-setor').value);
+        const imagemFile = document.getElementById('pb-imagem').files[0];
+        if (imagemFile) {
+            formData.append('imagem', imagemFile);
+        }
+
         const method = id ? 'PUT' : 'POST'; 
-        const url = id ? `${backendUrl}/api/dashboard/produtos/${id}` : `${backendUrl}/api/dashboard/produtos`; 
+        const url = id ? `${backendUrl}/produtos_base/${id}` : `${backendUrl}/produtos_base`; 
         try { 
             const response = await fetchProtegido(url, { method, body: formData }); 
             if (!response.ok) throw new Error((await response.json()).error); 
@@ -402,17 +495,27 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
     }
     
+    function gerarSlug(texto) {
+        return texto.toString().toLowerCase()
+            .replace(/\s+/g, '-')           // Substitui espaços por -
+            .replace(/[^\w\-]+/g, '')       // Remove todos os caracteres não-palavra
+            .replace(/\-\-+/g, '-')         // Substitui múltiplos - por um único -
+            .replace(/^-+/, '')             // Remove hífens do início
+            .replace(/-+$/, '');            // Remove hífens do final
+    }
+
     async function handleFormVariacaoSubmit(e) {
         e.preventDefault(); 
         const id = document.getElementById('v-id').value;
+        const nomeVariacao = document.getElementById('v-nome').value;
         const data = { 
             produto_base_id: document.getElementById('v-pb-id').value, 
-            nome: document.getElementById('v-nome').value, 
+            nome: nomeVariacao, 
             preco: document.getElementById('v-preco').value, 
-            slug: gerarSlug(document.getElementById('v-nome').value) 
+            slug: gerarSlug(nomeVariacao) + '-' + Date.now() // Adiciona timestamp para garantir unicidade
         };
         const method = id ? 'PUT' : 'POST'; 
-        const url = id ? `${backendUrl}/api/dashboard/variacoes/${id}` : `${backendUrl}/api/dashboard/variacoes`; 
+        const url = id ? `${backendUrl}/variacoes/${id}` : `${backendUrl}/variacoes`; 
         try { 
             const response = await fetchProtegido(url, { method, body: JSON.stringify(data) }); 
             if (!response.ok) throw new Error((await response.json()).error); 
@@ -428,12 +531,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const nome = document.getElementById('nome-setor').value;
         if (!nome) return;
         const method = id ? 'PUT' : 'POST';
-        const url = id ? `${backendUrl}/api/dashboard/setores/${id}` : `${backendUrl}/api/dashboard/setores`;
+        const url = id ? `${backendUrl}/setores/${id}` : `${backendUrl}/setores`;
         try {
             await fetchProtegido(url, { method, body: JSON.stringify({ nome }) });
             document.getElementById('form-setor').reset();
             document.getElementById('setor-id').value = '';
             await carregarTudo();
+            mostrarToast(`Setor ${id ? 'atualizado' : 'criado'}!`, 'sucesso');
         } catch(error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
     }
 
@@ -470,6 +574,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function renderizarRegrasCombo() {
+        const container = document.getElementById('regras-container');
+        container.innerHTML = '<h4>Regras Atuais:</h4>';
+        if (regrasTemporarias.length === 0) {
+            container.innerHTML += '<p>Nenhuma regra adicionada.</p>';
+            return;
+        }
+        const lista = document.createElement('ul');
+        lista.className = 'regras-lista';
+        regrasTemporarias.forEach((regra, index) => {
+            let nomeAlvo = '';
+            if (regra.setor_id_alvo) {
+                const setor = cache.setores.find(s => s.id == regra.setor_id_alvo);
+                nomeAlvo = `Setor: ${setor ? setor.nome : 'Desconhecido'}`;
+            } else if (regra.produto_base_id_alvo) {
+                const produto = cache.produtos.find(p => p.id == regra.produto_base_id_alvo);
+                nomeAlvo = `Produto: ${produto ? produto.nome : 'Desconhecido'}`;
+            }
+            const upchargeTexto = regra.upcharge > 0 ? ` (Acréscimo: R$ ${Number(regra.upcharge).toFixed(2).replace('.',',')})` : '';
+            lista.innerHTML += `
+                <li>
+                    <span>${nomeAlvo}${upchargeTexto}</span>
+                    <button type="button" class="delete-btn btn-sm" data-action="remover-regra" data-index="${index}">Remover</button>
+                </li>
+            `;
+        });
+        container.appendChild(lista);
+    }
+    
     // --- LÓGICA DE EVENTOS (AÇÕES) ---
     function handleAcoesProdutos(e) {
         const target = e.target;
@@ -539,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('nome-setor').focus();
         } else if (action === 'excluir-setor') {
              if (!confirm(`Tem certeza que deseja excluir o setor "${nome}"?`)) return;
-             fetchProtegido(`${backendUrl}/api/dashboard/setores/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
+             fetchProtegido(`${backendUrl}/setores/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
         }
     }
 
@@ -549,16 +682,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const { action, id, pbId, nome } = button.dataset;
         const actions = {
             'editar-produto_base': () => abrirModalProdutoBase(parseInt(id)),
-            'duplicar-produto_base': () => fetchProtegido(`${backendUrl}/api/dashboard/produtos/${id}/duplicar`, { method: 'POST' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro')),
+            'duplicar-produto_base': () => fetchProtegido(`${backendUrl}/produtos_base/${id}/duplicar`, { method: 'POST' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro')),
             'excluir-produto_base': () => {
                 if(confirm(`Excluir "${nome}" e todas as suas variações?`)) 
-                fetchProtegido(`${backendUrl}/api/dashboard/produtos/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
+                fetchProtegido(`${backendUrl}/produtos_base/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
             },
             'editar-variacao': () => abrirModalVariacao(parseInt(id), parseInt(pbId)),
-            'duplicar-variacao': () => fetchProtegido(`${backendUrl}/api/dashboard/variacoes/${id}/duplicar`, { method: 'POST' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro')),
+            'duplicar-variacao': () => fetchProtegido(`${backendUrl}/variacoes/${id}/duplicar`, { method: 'POST' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro')),
             'excluir-variacao': () => {
                 if(confirm(`Excluir a variação "${nome}"?`))
-                fetchProtegido(`${backendUrl}/api/dashboard/variacoes/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
+                fetchProtegido(`${backendUrl}/variacoes/${id}`, { method: 'DELETE' }).then(carregarTudo).catch(err => mostrarToast(err.message, 'erro'));
             },
             'editar-combo': () => abrirModalCombo(parseInt(id)),
             'excluir-combo': () => {
@@ -640,7 +773,7 @@ document.addEventListener('DOMContentLoaded', () => {
             onEnd: async (evt) => {
                 const newOrder = [...container.children].map(card => card.dataset.produtoBaseId);
                 try {
-                    await fetchProtegido(`${backendUrl}/api/dashboard/produtos/reordenar`, { method: 'POST', body: JSON.stringify({ order: newOrder }) });
+                    await fetchProtegido(`${backendUrl}/dashboard/produtos/reordenar`, { method: 'POST', body: JSON.stringify({ order: newOrder }) });
                     mostrarToast('Ordem salva!', 'sucesso');
                 } catch (error) { mostrarToast('Erro ao salvar ordem.', 'erro'); carregarTudo(); }
             }
