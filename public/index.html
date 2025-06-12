@@ -97,7 +97,7 @@
     <header class="header"><h1>Saborosa Pamonha do <span>Goiás</span></h1><p>Escolha seus itens e confirme o pedido no WhatsApp!</p></header>
     <main class="container">
         <section class="menu"><h2>Nosso Cardápio</h2><div class="product-list" id="product-list"><p>Carregando cardápio...</p></div></section>
-        <section class="cart-checkout-container" id="carrinho-secao"><h2>Seu Pedido</h2><ul id="cart-items"><li>Seu carrinho está vazio.</li></ul>
+        <section class="cart-checkout-container" id="carrinho-secao"><h2>Seu Pedido</h2><ul id="cart-items"><li class="cart-empty-message">Seu carrinho está vazio.</li></ul>
         <div class="checkout-section">
             <h3>Como deseja receber?</h3>
             <div class="options-grid" id="delivery-options">
@@ -122,8 +122,8 @@
 
 <script>
     // --- CONFIGURAÇÕES GLOBAIS ---
-    const backendUrl = 'https://pamonharia-servidor.onrender.com';
-    const numeroWhatsApp = '5562000000000'; // Substitua pelo seu número real
+    const backendUrl = 'https://pamonhariasaborosa.expertbr.com';
+    const numeroWhatsApp = '5562992819889';
     const TAXA_ENTREGA = 14.00;
     const ENDERECO_PAMONHARIA = 'Rua Tulipas, Quadra 01, Lote 06, C-02, Jardim Mondale';
     const LINK_LOCALIZACAO = 'https://maps.app.goo.gl/eseCGMFiB857R4BP9';
@@ -135,18 +135,17 @@
     let selecaoModal = { produtoBaseId: null, variacoes: {} };
     let selecaoComboModal = { combo: null, itens: {}, totalSelecionado: 0, upcharge: 0 };
     let cartTimeoutTimer = null;
-    const TIMEOUT_DURATION = 5 * 60 * 1000; // 5 minutos
+    const TIMEOUT_DURATION = 5 * 60 * 1000;
 
     // --- ELEMENTOS DO DOM ---
     const floatingCartBtn = document.getElementById('floating-cart-btn');
     const cartItemCount = document.getElementById('cart-item-count');
 
     // --- LÓGICA PRINCIPAL ---
-
     async function carregarTudo() {
         try {
             const [produtosRes, combosRes] = await Promise.all([
-                fetch(`${backendUrl}/cardapio`),
+                fetch(`${backendUrl}/api/cardapio`), // CORREÇÃO APLICADA AQUI
                 fetch(`${backendUrl}/api/combos`)
             ]);
             if (!produtosRes.ok || !combosRes.ok) {
@@ -165,40 +164,44 @@
         const productList = document.getElementById('product-list');
         productList.innerHTML = '';
         
-        // Renderiza os combos primeiro
-        combosCache.forEach(combo => {
-            const isEsgotado = verificarEstoqueCombo(combo);
-            const productCard = document.createElement('div');
-            productCard.className = `product-card ${isEsgotado ? 'produto-esgotado' : ''}`;
-            productCard.innerHTML = `
-                <img src="${combo.imagem_url}" alt="${combo.nome}">
-                <div class="product-card-content">
-                    <div>
-                        <h3>${combo.nome}</h3>
-                        <p>${combo.descricao || ''}</p>
-                    </div>
-                    <button class="add-button" onclick="abrirModalCombo(${combo.id})" ${isEsgotado ? 'disabled' : ''}>
-                        ${isEsgotado ? 'Combo Indisponível' : 'Montar Combo'}
-                    </button>
-                </div>`;
-            productList.appendChild(productCard);
-        });
+        // Junta produtos e combos numa lista só para poder ordenar se quiser no futuro
+        const itensParaRenderizar = [
+            ...combosCache.map(c => ({...c, tipo: 'combo'})),
+            ...produtosCache.map(p => ({...p, tipo: 'produto'}))
+        ];
 
-        // Renderiza os produtos normais
-        produtosCache.forEach(produto => {
-            const totalEstoqueProduto = (produto.variacoes || []).reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0);
-            const isEsgotado = totalEstoqueProduto === 0;
+        if (itensParaRenderizar.length === 0) {
+            productList.innerHTML = '<p>Nenhum produto disponível no momento. Volte mais tarde!</p>';
+            return;
+        }
+
+        itensParaRenderizar.forEach(item => {
             const productCard = document.createElement('div');
+            let isEsgotado = false;
+            let buttonText = '';
+            let onclickAction = '';
+
+            if (item.tipo === 'combo') {
+                isEsgotado = verificarEstoqueCombo(item);
+                buttonText = isEsgotado ? 'Combo Indisponível' : 'Montar Combo';
+                onclickAction = `abrirModalCombo(${item.id})`;
+            } else { // tipo é 'produto'
+                const totalEstoqueProduto = (item.variacoes || []).reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0);
+                isEsgotado = totalEstoqueProduto === 0;
+                buttonText = isEsgotado ? 'Esgotado' : 'Escolher Opções';
+                onclickAction = `abrirModalVariacoes(${item.id})`;
+            }
+
             productCard.className = `product-card ${isEsgotado ? 'produto-esgotado' : ''}`;
             productCard.innerHTML = `
-                <img src="${produto.imagem_url}" alt="${produto.nome}">
+                <img src="${item.imagem_url}" alt="${item.nome}">
                 <div class="product-card-content">
                     <div>
-                        <h3>${produto.nome}</h3>
-                        <p>${produto.descricao || ''}</p>
+                        <h3>${item.nome}</h3>
+                        <p>${item.descricao || ''}</p>
                     </div>
-                    <button class="add-button" onclick="abrirModalVariacoes(${produto.id})" ${isEsgotado ? 'disabled' : ''}>
-                        ${isEsgotado ? 'Esgotado' : 'Escolher Opções'}
+                    <button class="add-button" onclick="${onclickAction}" ${isEsgotado ? 'disabled' : ''}>
+                        ${buttonText}
                     </button>
                 </div>`;
             productList.appendChild(productCard);
@@ -210,7 +213,6 @@
     }
 
     // --- LÓGICA DE PRODUTOS NORMAIS ---
-
     function abrirModalVariacoes(produtoBaseId) {
         const produto = produtosCache.find(p => p.id === produtoBaseId);
         if (!produto) return;
@@ -271,18 +273,16 @@
     }
 
     // --- LÓGICA DE COMBOS (NOVA LÓGICA) ---
-    
     function verificarEstoqueCombo(combo) {
-        // Encontra todos os itens elegíveis para o combo
         const itensElegiveis = produtosCache.flatMap(p => {
             const eDoSetor = combo.regras.some(r => r.setor_id_alvo === p.setor_id);
             const eProdutoEspecifico = combo.regras.some(r => r.produto_base_id_alvo === p.id);
             return (eDoSetor || eProdutoEspecifico) ? p.variacoes : [];
-        });
+        }).filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
+        
         const estoqueTotalDisponivel = itensElegiveis.reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0);
         return estoqueTotalDisponivel < combo.quantidade_itens_obrigatoria;
     }
-
 
     function abrirModalCombo(comboId) {
         const combo = combosCache.find(c => c.id === comboId);
@@ -295,14 +295,14 @@
         itemsList.innerHTML = '';
 
         const itensElegiveis = produtosCache.flatMap(p => {
-            const regraSetor = combo.regras.find(r => r.setor_id_alvo === p.setor_id);
-            const regraProduto = combo.regras.find(r => r.produto_base_id_alvo === p.id);
-            return (regraSetor || regraProduto) ? p.variacoes.map(v => ({...v, produtoBase: p})) : [];
-        }).filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i); // Remove duplicatas
+            const regraSetorGeral = combo.regras.find(r => r.setor_id_alvo === p.setor_id);
+            const eProdutoEspecificoComRegra = combo.regras.some(r => r.produto_base_id_alvo === p.id);
+            return (regraSetorGeral || eProdutoEspecificoComRegra) ? p.variacoes.map(v => ({...v, produtoBase: p})) : [];
+        }).filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
 
         itensElegiveis.forEach(item => {
-            const regra = combo.regras.find(r => r.produto_base_id_alvo === item.produtoBase.id) || { upcharge: 0 };
-            const upcharge = regra.upcharge;
+            const regraEspecifica = combo.regras.find(r => r.produto_base_id_alvo === item.produtoBase.id);
+            const upcharge = regraEspecifica ? regraEspecifica.upcharge : 0;
             const estoqueDisponivel = getEstoqueDisponivel(item.slug);
             selecaoComboModal.itens[item.slug] = { ...item, quantidade: 0, upcharge: upcharge, estoqueDisponivel: estoqueDisponivel };
             
@@ -331,13 +331,11 @@
     function mudarQuantidadeCombo(slug, delta) {
         const item = selecaoComboModal.itens[slug];
         const novoTotal = selecaoComboModal.totalSelecionado + delta;
-
         if (delta > 0 && item.quantidade >= item.estoqueDisponivel) {
             const msgEl = document.getElementById(`msg-c-${slug}`);
             if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); }
             return;
         }
-
         if (item.quantidade + delta >= 0 && novoTotal <= selecaoComboModal.combo.quantidade_itens_obrigatoria) {
             item.quantidade += delta;
             document.getElementById(`combo-qty-${slug}`).innerText = item.quantidade;
@@ -351,9 +349,7 @@
         for(const slug in selecaoComboModal.itens) {
             const item = selecaoComboModal.itens[slug];
             totalSelecionado += item.quantidade;
-            if(item.upcharge > 0) {
-                upcharge += item.quantidade * item.upcharge;
-            }
+            if(item.upcharge > 0) { upcharge += item.quantidade * item.upcharge; }
         }
         selecaoComboModal.totalSelecionado = totalSelecionado;
         selecaoComboModal.upcharge = upcharge;
@@ -363,13 +359,8 @@
         statusEl.innerText = `Selecione ${totalObrigatorio} itens (${totalSelecionado} / ${totalObrigatorio})`;
         
         const addButton = document.getElementById('add-combo-button');
-        if(totalSelecionado === totalObrigatorio) {
-            addButton.disabled = false;
-            statusEl.style.color = 'var(--cor-sucesso)';
-        } else {
-            addButton.disabled = true;
-            statusEl.style.color = 'var(--cor-principal)';
-        }
+        addButton.disabled = totalSelecionado !== totalObrigatorio;
+        statusEl.style.color = totalSelecionado === totalObrigatorio ? 'var(--cor-sucesso)' : 'var(--cor-principal)';
     }
 
     function adicionarComboAoCarrinho() {
@@ -377,31 +368,18 @@
         const precoFinal = combo.preco_base + upcharge;
         let detalhes = [];
         let subItens = [];
-
         for(const slug in itens) {
             if (itens[slug].quantidade > 0) {
                 detalhes.push(`${itens[slug].quantidade}x ${itens[slug].produtoBase.nome} (${itens[slug].nome})`);
                 subItens.push({ slug: slug, quantidade: itens[slug].quantidade });
             }
         }
-
-        carrinho.push({ 
-            id: `combo-${combo.id}-${Date.now()}`, 
-            nome: combo.nome, 
-            preco: precoFinal, 
-            quantidade: 1, 
-            detalhes: detalhes.join(', '), 
-            isCombo: true, 
-            subItens: subItens 
-        });
-
+        carrinho.push({ id: `combo-${combo.id}-${Date.now()}`, nome: combo.nome, preco: precoFinal, quantidade: 1, detalhes: detalhes.join(', '), isCombo: true, subItens: subItens });
         atualizarDisplayCarrinho();
         fecharModal();
     }
 
-
     // --- LÓGICA DO CARRINHO ---
-
     function atualizarDisplayCarrinho() {
         const cartItems = document.getElementById('cart-items');
         const subtotalEl = document.getElementById('subtotal').querySelector('strong');
@@ -410,11 +388,9 @@
         const grandTotalEl = document.getElementById('grand-total').querySelector('strong');
         const finalizeButton = document.getElementById('finalize-button');
         const deliveryDetailsEl = document.getElementById('delivery-details');
-
         cartItems.innerHTML = '';
         let subtotal = 0;
         let totalItensNoCarrinho = 0;
-
         if (carrinho.length === 0) {
             cartItems.innerHTML = '<li class="cart-empty-message">Seu carrinho está vazio.</li>';
             finalizeButton.classList.add('disabled');
@@ -424,29 +400,18 @@
             finalizeButton.classList.remove('disabled');
             floatingCartBtn.classList.add('visible');
             resetCartTimeout();
-
             carrinho.forEach(item => {
                 const li = document.createElement('li');
                 li.className = 'cart-item';
                 const detalhesHtml = item.detalhes ? `<div class="item-details">${item.detalhes}</div>` : '';
                 const qtdeControlsHtml = item.isCombo ? '' : `<button class="quantity-btn" onclick="mudarQuantidadeCarrinho('${item.id}', -1)">-</button><span class="quantity-value">${item.quantidade}</span><button class="quantity-btn" onclick="mudarQuantidadeCarrinho('${item.id}', 1)">+</button>`;
-                li.innerHTML = `
-                    <div class="cart-item-info">
-                        <span class="item-name">${item.quantidade}x ${item.nome}</span>
-                        ${detalhesHtml}
-                        <span class="item-price">R$ ${Number(item.preco).toFixed(2).replace('.', ',')}</span>
-                    </div>
-                    <div class="cart-item-controls">
-                        ${qtdeControlsHtml}
-                        <button class="remove-btn" onclick="removerItemDoCarrinho('${item.id}')">×</button>
-                    </div>`;
+                li.innerHTML = `<div class="cart-item-info"><span class="item-name">${item.quantidade}x ${item.nome}</span>${detalhesHtml}<span class="item-price">R$ ${Number(item.preco).toFixed(2).replace('.', ',')}</span></div><div class="cart-item-controls">${qtdeControlsHtml}<button class="remove-btn" onclick="removerItemDoCarrinho('${item.id}')">×</button></div>`;
                 cartItems.appendChild(li);
                 subtotal += item.preco * item.quantidade;
-                totalItensNoCarrinho += item.quantidade;
+                totalItensNoCarrinho += item.isCombo ? item.subItens.reduce((acc, si) => acc + si.quantidade, 0) : item.quantidade;
             });
         }
-        cartItemCount.innerText = totalItensNoCarrinho;
-
+        cartItemCount.innerText = carrinho.reduce((acc, item) => acc + item.quantidade, 0);
         const tipoRecebimento = document.querySelector('input[name="tipo-recebimento"]:checked').value;
         let totalFinal = subtotal;
         if (tipoRecebimento === 'Entrega') {
@@ -487,20 +452,15 @@
         carrinho = carrinho.filter(item => item.id !== itemId);
         atualizarDisplayCarrinho();
     }
-    
-    // --- FUNÇÕES UTILITÁRIAS ---
 
+    // --- FUNÇÕES UTILITÁRIAS ---
     function getEstoqueDisponivel(slug) {
         const todosOsItens = produtosCache.flatMap(p => p.variacoes);
         const itemOriginal = todosOsItens.find(i => i.slug === slug);
         if (!itemOriginal) return 0;
-
         let quantidadeNoCarrinho = 0;
-        // Soma itens normais no carrinho
         quantidadeNoCarrinho += carrinho.filter(item => !item.isCombo && item.slug === slug).reduce((acc, item) => acc + item.quantidade, 0);
-        // Soma itens dentro de combos no carrinho
         quantidadeNoCarrinho += carrinho.filter(item => item.isCombo).flatMap(c => c.subItens).filter(subItem => subItem.slug === slug).reduce((acc, subItem) => acc + subItem.quantidade, 0);
-        
         return itemOriginal.quantidade_estoque - quantidadeNoCarrinho;
     }
 
@@ -526,10 +486,10 @@
             return;
         }
         let subtotal = 0;
-        let mensagem = 'Olá! Gostaria de fazer o seguinte pedido do cardápio online:\n\n';
+        let mensagem = 'Olá! Gostaria de fazer o seguinte pedido pelo cardápio online:\n\n';
         mensagem += '🍽️ *ITENS DO PEDIDO*\n';
         carrinho.forEach(item => {
-            mensagem += `${item.quantidade}x ${item.nome}`;
+            mensagem += `*${item.quantidade}x* ${item.nome}`;
             if (item.detalhes) {
                 mensagem += `\n  ↳ _(${item.detalhes})_`;
             }

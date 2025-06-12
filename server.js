@@ -10,7 +10,6 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// --- CONFIGURAÇÃO DO CLOUDINARY PARA UPLOAD DE IMAGENS ---
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
@@ -30,28 +29,28 @@ const storage = new CloudinaryStorage({
 });
 
 const upload = multer({ storage: storage });
-
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 // =================================================================================================
-// --- MIDDLEWARES E ROTAS DE PÁGINAS (ATUALIZADO) ---
+// --- MIDDLEWARES E ROTAS DE PÁGINAS ---
 // =================================================================================================
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+// MUDANÇA APLICADA AQUI para desativar o 'index.html' automático
+app.use(express.static('public', { index: false }));
 
 // ROTA RAIZ AGORA APONTA PARA O DASHBOARD/LOGIN
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// NOVA ROTA PARA O DASHBOARD (APONTA PARA O MESMO ARQUIVO)
+// ROTA PARA O DASHBOARD (APONTA PARA O MESMO ARQUIVO)
 app.get('/dashboard', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// NOVA ROTA PARA O CARDÁPIO DO CLIENTE
+// ROTA PARA O CARDÁPIO DO CLIENTE
 app.get('/cardapio', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
