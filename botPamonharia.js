@@ -21,7 +21,9 @@ const CONFIG = {
     ATENDENTE_CONTATO: '5562992819889'
 };
 
-// --- CONFIGURAÇÃO DO CLIENTE WHATSAPP (VERSÃO FINAL E OTIMIZADA) ---
+// --- CONFIGURAÇÃO DO CLIENTE WHATSAPP (SIMPLIFICADA) ---
+// A seção 'webVersionCache' foi removida para usar o padrão da biblioteca,
+// eliminando um possível ponto de falha de rede durante a inicialização.
 const client = new Client({
     authStrategy: new LocalAuth({
         clientId: "bot-pamonharia-concierge",
@@ -36,13 +38,9 @@ const client = new Client({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--single-process', // Essencial para ambientes com recursos limitados como o Docker
+            '--single-process',
             '--disable-gpu'
         ],
-    },
-    webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
     }
 });
 
@@ -128,8 +126,6 @@ async function enviarMenuPrincipal(chat, triggerMessage = '') {
 // =================================================================================================
 // --- INICIALIZAÇÃO DO CLIENTE ---
 // =================================================================================================
-// NO FINAL DO ARQUIVO botPamonharia.js
-
 client.initialize().catch(err => {
     console.error('[ERRO FATAL NA INICIALIZAÇÃO]', err);
     log("FATAL", "Initialize", `Falha ao inicializar o cliente. Verifique o erro detalhado acima.`);
