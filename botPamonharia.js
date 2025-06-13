@@ -4,10 +4,10 @@
 require('dotenv').config();
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const axios = require('axios');
-const qrcode = require('qrcode'); // ATUALIZADO: Usando a biblioteca 'qrcode'
+const qrcode = require('qrcode');
 
 // =================================================================================================
-// --- CONFIGURAÇÕES ---
+// --- CONFIGURAÇÕES E ESTADO GLOBAL ---
 // =================================================================================================
 
 function log(level, context, message) {
@@ -19,6 +19,12 @@ const CONFIG = {
     CARDAPIO_URL: 'https://pamonhariasaborosa.expertbr.com/cardapio',
     API_URL: process.env.BACKEND_URL || 'http://localhost:10000',
     ATENDENTE_CONTATO: '5562992819889'
+};
+
+// NOVO: Cache para o status da loja. Começa como fechado por padrão.
+let statusLojaCache = {
+    status: 'fechado',
+    mensagem: 'Verificando status da loja, um momento...'
 };
 
 const client = new Client({
@@ -47,32 +53,39 @@ const chatStates = new Map();
 // --- LÓGICA PRINCIPAL DO BOT ---
 // =================================================================================================
 
-// ATUALIZADO: Lógica para exibir o QR Code como texto no log
+// NOVO: Função para atualizar o status da loja em segundo plano
+async function atualizarStatusLojaPeriodicamente() {
+    try {
+        log('INFO', 'StatusCheck', 'Verificando status da loja na API...');
+        const { data } = await axios.get(`${CONFIG.API_URL}/api/loja/status`, { timeout: 15000 });
+        statusLojaCache = data;
+        log('INFO', 'StatusCheck', `Status atualizado: ${data.status}`);
+    } catch (error) {
+        log('ERROR', 'StatusCheck', `Falha ao buscar status da loja: ${error.message}`);
+        // Em caso de falha, mantém o último status conhecido ou assume como fechado
+        statusLojaCache.mensagem = "Estamos com problemas para verificar nosso horário. Por favor, tente novamente em instantes.";
+    }
+}
+
 client.on('qr', qr => {
-    log('INFO', 'QRCode', 'QR Code recebido. Convertendo para texto para exibição no log...');
+    log('INFO', 'QRCode', 'QR Code recebido. Convertendo para texto...');
     qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
-        if (err) {
-            log('ERROR', 'QRCode', 'Não foi possível converter o QR Code.');
-            console.error(err);
-            return;
-        }
-        console.log('--- INÍCIO DO QR CODE ---');
+        if (err) return console.error(err);
         console.log(url);
-        console.log('--- FIM DO QR CODE ---');
         log('INFO', 'QRCode', 'Escaneie o código acima com o seu WhatsApp.');
     });
 });
 
 client.on('ready', () => {
     log('SUCCESS', 'Client', 'Bot Concierge da Pamonharia está online!');
+    // NOVO: Inicia a verificação periódica assim que o bot fica pronto.
+    atualizarStatusLojaPeriodicamente(); // Faz a primeira verificação imediatamente
+    setInterval(atualizarStatusLojaPeriodicamente, 60 * 1000); // E depois a cada 60 segundos
 });
 
-// ... (O restante do arquivo permanece exatamente o mesmo)
 client.on('message_create', async msg => {
     const chat = await msg.getChat();
-    if (chat.isGroup || msg.fromMe) {
-        return;
-    }
+    if (chat.isGroup || msg.fromMe) return;
 
     const lowerBody = msg.body?.trim().toLowerCase() ?? '';
     const chatId = msg.from;
@@ -90,20 +103,20 @@ client.on('message_create', async msg => {
     await enviarMenuPrincipal(chat, lowerBody);
 });
 
+// ATUALIZADO: Esta função agora é instantânea, pois usa o cache.
 async function enviarMenuPrincipal(chat, triggerMessage = '') {
     try {
-        log('INFO', 'Handler', `Processando mensagem para ${chat.id._serialized}. Gatilho: "${triggerMessage}"`);
-
-        const { data: statusLoja } = await axios.get(`${CONFIG.API_URL}/api/loja/status`);
+        log('INFO', 'Handler', `Processando mensagem para ${chat.id._serialized}. Usando status em cache: ${statusLojaCache.status}`);
         
-        const lojaAberta = statusLoja.status === 'aberto';
+        // USA O CACHE, NÃO FAZ MAIS CHAMADA DE API AQUI
+        const lojaAberta = statusLojaCache.status === 'aberto';
         let saudacao = 'Olá! Bem-vindo(a) à *Pamonharia Saborosa do Goiás*! 🌽\n\n';
         
         let mensagemPrincipal;
         if (lojaAberta) {
             mensagemPrincipal = `Estamos abertos! Para ver nosso cardápio completo com estoque em tempo real e montar seu pedido, clique no link abaixo:\n\n*${CONFIG.CARDAPIO_URL}*`;
         } else {
-            mensagemPrincipal = `No momento estamos fechados. ${statusLoja.mensagem}\n\nMas você já pode conferir nosso cardápio para quando voltarmos! Clique no link abaixo:\n\n*${CONFIG.CARDAPIO_URL}*`;
+            mensagemPrincipal = `No momento estamos fechados. ${statusLojaCache.mensagem}\n\nMas você já pode conferir nosso cardápio para quando voltarmos! Clique no link abaixo:\n\n*${CONFIG.CARDAPIO_URL}*`;
         }
 
         const respostasRapidas = {
@@ -128,7 +141,6 @@ async function enviarMenuPrincipal(chat, triggerMessage = '') {
 
     } catch (error) {
         log('ERROR', 'Handler', `Falha ao processar mensagem para ${chat.id._serialized}: ${error.message}`);
-        await chat.sendMessage('Ops! Parece que estou com um problema para me conectar ao nosso sistema. Por favor, aguarde um momento e tente novamente.');
     }
 }
 
@@ -139,4 +151,3 @@ client.initialize().catch(err => {
     console.error('[ERRO FATAL NA INICIALIZAÇÃO]', err);
     log("FATAL", "Initialize", `Falha ao inicializar o cliente. Verifique o erro detalhado acima.`);
 });
-
