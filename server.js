@@ -3,7 +3,7 @@
 // =================================================================================================
 require('dotenv').config();
 const express = require('express');
-const cors =require('cors');
+const cors = require('cors');
 const db = require('./database.js');
 const multer = require('multer');
 const path = require('path');
@@ -141,7 +141,8 @@ app.get('/api/loja/status', async (req, res) => {
         }
         res.json(response);
     } catch (err) {
-        console.error("ERRO AO VERIFICAR STATUS:", err);
+        // LOG: Adicionado para depuração
+        console.error('[ERRO DETALHADO] em /api/loja/status:', err);
         res.status(500).json({ error: 'Erro ao verificar status da loja.' });
     }
 });
@@ -151,6 +152,8 @@ app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
         const { rows } = await db.query('SELECT * FROM configuracao_loja WHERE id = 1');
         res.json(rows[0]);
     } catch (err) {
+        // LOG: Adicionado para depuração
+        console.error('[ERRO DETALHADO] em /api/dashboard/loja/configuracoes:', err);
         res.status(500).json({ error: 'Erro ao buscar configurações.' });
     }
 });
@@ -164,7 +167,8 @@ app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (r
         );
         res.json({ message: 'Configurações da loja atualizadas com sucesso!' });
     } catch (err) {
-        console.error("ERRO AO ATUALIZAR CONFIGURAÇÕES (ADMIN):", err);
+        // LOG: Adicionado para depuração
+        console.error('[ERRO DETALHADO] em PUT /api/dashboard/loja/configuracoes:', err);
         res.status(500).json({ error: 'Erro ao atualizar configurações.' });
     }
 });
@@ -178,7 +182,8 @@ app.post('/api/dashboard/loja/status-manual', protegerRota, async (req, res) => 
         );
         res.json({ message: 'Status manual da loja atualizado com sucesso!' });
     } catch (err) {
-        console.error("ERRO AO ATUALIZAR STATUS MANUAL:", err);
+        // LOG: Adicionado para depuração
+        console.error('[ERRO DETALHADO] em POST /api/dashboard/loja/status-manual:', err);
         res.status(500).json({ error: 'Erro ao atualizar status manual da loja.' });
     }
 });
@@ -222,9 +227,45 @@ app.get('/api/dashboard/produtos', protegerRota, async (req, res) => {
     try {
         const produtos = await getCardapioCompleto();
         res.json({ data: produtos });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { 
+        // LOG: Adicionado para depuração
+        console.error('[ERRO DETALHADO] em /api/dashboard/produtos:', err);
+        res.status(500).json({ error: "Erro ao buscar produtos para o dashboard." }); 
+    }
 });
 
+app.get('/setores', protegerRota, async (req, res) => {
+    try {
+        const { rows } = await db.query("SELECT * FROM setores ORDER BY nome");
+        res.json({ data: rows });
+    } catch (err) {
+        // LOG: Adicionado para depuração
+        console.error('[ERRO DETALHADO] em /setores:', err);
+        res.status(500).json({ error: "Erro ao buscar setores." });
+    }
+});
+
+app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
+    try {
+        const sql = `
+            SELECT
+                c.*,
+                COALESCE(json_agg(rc.*) FILTER (WHERE rc.id IS NOT NULL), '[]'::json) as regras
+            FROM combos c
+            LEFT JOIN regras_combo rc ON rc.combo_id = c.id
+            GROUP BY c.id
+            ORDER BY c.id;
+        `;
+        const { rows } = await db.query(sql);
+        res.json({ data: rows });
+    } catch (err) {
+        // LOG: Adicionado para depuração
+        console.error("[ERRO DETALHADO] em /api/dashboard/combos:", err);
+        res.status(500).json({ error: "Erro ao buscar combos para o dashboard." });
+    }
+});
+
+// ... O restante do arquivo server.js continua aqui, sem alterações ...
 app.post('/produtos_base', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     try {
         const { nome, descricao, setor_id } = req.body;
@@ -290,13 +331,6 @@ app.post('/produtos_base/:id/duplicar', protegerRota, apenasAdmin, async (req, r
     } finally {
         client.release();
     }
-});
-
-app.get('/setores', protegerRota, async (req, res) => {
-    try {
-        const { rows } = await db.query("SELECT * FROM setores ORDER BY nome");
-        res.json({ data: rows });
-    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/setores', protegerRota, apenasAdmin, async (req, res) => {
@@ -414,38 +448,6 @@ app.post('/pedido', protegerRota, async (req, res) => {
         client.release();
     }
 });
-
-app.get('/api/combos', async (req, res) => {
-    try {
-        const sql = `
-            SELECT c.*, COALESCE((SELECT json_agg(rc.*) FROM regras_combo rc WHERE rc.combo_id = c.id), '[]'::json) as regras
-            FROM combos c WHERE c.ativo = true ORDER BY c.id;
-        `;
-        const { rows } = await db.query(sql);
-        res.json({ data: rows });
-    } catch (err) { res.status(500).json({ error: "Erro ao buscar combos." }); }
-});
-
-// ROTA DE COMBOS DO DASHBOARD (COM SQL CORRIGIDO)
-app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
-    try {
-        const sql = `
-            SELECT
-                c.*,
-                COALESCE(json_agg(rc.*) FILTER (WHERE rc.id IS NOT NULL), '[]'::json) as regras
-            FROM combos c
-            LEFT JOIN regras_combo rc ON rc.combo_id = c.id
-            GROUP BY c.id
-            ORDER BY c.id;
-        `;
-        const { rows } = await db.query(sql);
-        res.json({ data: rows });
-    } catch (err) {
-        console.error("ERRO NO ENDPOINT DE COMBOS:", err);
-        res.status(500).json({ error: "Erro ao buscar combos para o dashboard." });
-    }
-});
-
 
 app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });

@@ -64,27 +64,36 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- LÓGICA DE CARREGAMENTO DE DADOS ---
+    // --- LÓGICA DE CARREGAMENTO DE DADOS (COM LOGS DETALHADOS) ---
     async function carregarTudo() {
         try {
-            mostrarToast('Carregando dados...', 'info');
-            const [setoresRes, produtosRes, combosRes, configRes] = await Promise.all([
-                fetchProtegido(`${backendUrl}/setores`),
-                fetchProtegido(`${backendUrl}/api/dashboard/produtos`),
-                fetchProtegido(`${backendUrl}/api/dashboard/combos`),
-                fetchProtegido(`${backendUrl}/api/dashboard/loja/configuracoes`)
-            ]);
-
-            if (!setoresRes.ok || !produtosRes.ok || !combosRes.ok || !configRes.ok) {
-                const errorPayload = await (setoresRes.ok ? produtosRes.ok ? combosRes.ok ? configRes : configRes : combosRes : setoresRes).json();
-                throw new Error(errorPayload.error || "Falha ao carregar dados do servidor.");
-            }
+            console.log('Iniciando carregamento de dados do dashboard...');
             
+            console.log('1. Buscando setores...');
+            const setoresRes = await fetchProtegido(`${backendUrl}/setores`);
+            if (!setoresRes.ok) throw new Error(`Falha ao buscar setores: ${setoresRes.statusText}`);
             cache.setores = (await setoresRes.json()).data;
+            console.log('Setores carregados com sucesso.');
+
+            console.log('2. Buscando produtos...');
+            const produtosRes = await fetchProtegido(`${backendUrl}/api/dashboard/produtos`);
+            if (!produtosRes.ok) throw new Error(`Falha ao buscar produtos: ${produtosRes.statusText}`);
             cache.produtos = (await produtosRes.json()).data;
-            cache.combos = (await combosRes.json()).data;
-            cache.configuracoes = await configRes.json();
+            console.log('Produtos carregados com sucesso.');
             
+            console.log('3. Buscando combos...');
+            const combosRes = await fetchProtegido(`${backendUrl}/api/dashboard/combos`);
+            if (!combosRes.ok) throw new Error(`Falha ao buscar combos: ${combosRes.statusText}`);
+            cache.combos = (await combosRes.json()).data;
+            console.log('Combos carregados com sucesso.');
+
+            console.log('4. Buscando configurações...');
+            const configRes = await fetchProtegido(`${backendUrl}/api/dashboard/loja/configuracoes`);
+            if (!configRes.ok) throw new Error(`Falha ao buscar configurações: ${configRes.statusText}`);
+            cache.configuracoes = await configRes.json();
+            console.log('Configurações carregadas com sucesso.');
+
+            console.log('Todos os dados foram carregados. Renderizando componentes...');
             renderizarGerenciadorProdutos();
             renderizarGerenciadorSetores();
             renderizarGerenciadorCombos();
@@ -92,10 +101,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             inicializarDragAndDrop();
             aplicarPermissoes();
+            console.log('Renderização e aplicação de permissões concluídas.');
+            mostrarToast('Dashboard carregado!', 'sucesso');
 
         } catch (err) {
+            // LOG: Erro detalhado no console do navegador
+            console.error('ERRO CRÍTICO AO CARREGAR O DASHBOARD:', err);
             mostrarToast(err.message, 'erro');
-            console.error(err);
         }
     }
 
@@ -205,7 +217,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return response;
     }
     
-    // --- LÓGICA DE RENDERIZAÇÃO ---
+    // O restante do arquivo é idêntico ao da resposta anterior
+    // ...
+    // ... (incluindo todas as funções render, handle, etc.)
     function renderizarGerenciadorProdutos() {
         if(!gerenciadorProdutos) return;
         gerenciadorProdutos.innerHTML = ''; 
