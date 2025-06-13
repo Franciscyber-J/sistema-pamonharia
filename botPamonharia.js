@@ -128,6 +128,9 @@ async function enviarMenuPrincipal(chat, triggerMessage = '') {
 // =================================================================================================
 // --- INICIALIZAÇÃO DO CLIENTE ---
 // =================================================================================================
+// NO FINAL DO ARQUIVO botPamonharia.js
+
 client.initialize().catch(err => {
-    log("FATAL", "Initialize", `Falha ao inicializar o cliente: ${err}`);
+    console.error('[ERRO FATAL NA INICIALIZAÇÃO]', err);
+    log("FATAL", "Initialize", `Falha ao inicializar o cliente. Verifique o erro detalhado acima.`);
 });
