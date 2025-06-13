@@ -3,12 +3,23 @@
 // =================================================================================================
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
+const { Server } = require("socket.io");
 const cors = require('cors');
 const db = require('./database.js');
 const multer = require('multer');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: "*", // Em um ambiente de produção, é recomendado restringir ao seu domínio
+        methods: ["GET", "POST"]
+    }
+});
 
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
@@ -29,7 +40,6 @@ const storage = new CloudinaryStorage({
 });
 
 const upload = multer({ storage: storage });
-const app = express();
 const PORT = process.env.PORT || 10000;
 
 // =================================================================================================
@@ -87,9 +97,114 @@ const apenasAdmin = (req, res, next) => {
 };
 
 // =================================================================================================
+// --- GERENCIAMENTO DE ESTOQUE E TIMEOUT EM TEMPO REAL ---
+// =================================================================================================
+let liveInventory = {}; // Formato: { 'slug-do-produto': 50 }
+const userCarts = new Map(); // Formato: socket.id => { cart: {}, lastActivity: Date.now() }
+const CART_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos
+
+async function initializeInventory() {
+    try {
+        console.log('Inicializando o inventário em tempo real...');
+        const { rows } = await db.query('SELECT slug, quantidade_estoque FROM variacoes');
+        liveInventory = {}; // Limpa o inventário antigo
+        rows.forEach(item => {
+            liveInventory[item.slug] = item.quantidade_estoque;
+        });
+        console.log('Inventário inicializado com sucesso.');
+    } catch (error) {
+        console.error('ERRO CRÍTICO ao inicializar o inventário:', error);
+    }
+}
+
+function updateLiveInventory(slug, change) {
+    if (liveInventory[slug] !== undefined) {
+        liveInventory[slug] += change;
+    }
+    io.emit('estoque_atualizado', { slug, novaQuantidade: liveInventory[slug] });
+    console.log(`Estoque de ${slug} alterado em ${change}. Novo total virtual: ${liveInventory[slug]}`);
+}
+
+// =================================================================================================
+// --- LÓGICA DO SOCKET.IO ---
+// =================================================================================================
+io.on('connection', (socket) => {
+    console.log('Um cliente se conectou:', socket.id);
+    userCarts.set(socket.id, { cart: {}, lastActivity: Date.now() });
+
+    socket.emit('estado_inicial_estoque', liveInventory);
+
+    socket.on('carrinho_alterado', (cartItems) => {
+        const userSession = userCarts.get(socket.id);
+        if (!userSession) return;
+
+        const previousCart = userSession.cart;
+
+        // Devolve os itens do carrinho antigo ao inventário
+        for (const slug in previousCart) {
+            updateLiveInventory(slug, previousCart[slug]);
+        }
+
+        const newCart = {};
+        let canReserveAll = true;
+        for (const item of cartItems) {
+            if (liveInventory[item.slug] >= item.quantidade) {
+                newCart[item.slug] = (newCart[item.slug] || 0) + item.quantidade;
+            } else {
+                canReserveAll = false;
+                break;
+            }
+        }
+
+        if (canReserveAll) {
+            for (const slug in newCart) {
+                updateLiveInventory(slug, -newCart[slug]);
+            }
+            userSession.cart = newCart;
+            userSession.lastActivity = Date.now();
+            userCarts.set(socket.id, userSession);
+            socket.emit('reserva_carrinho_sucesso');
+        } else {
+            for (const slug in previousCart) {
+                updateLiveInventory(slug, -previousCart[slug]);
+            }
+            socket.emit('reserva_carrinho_falha');
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log('Um cliente se desconectou:', socket.id);
+        const userSession = userCarts.get(socket.id);
+        if (userSession && userSession.cart) {
+            for (const slug in userSession.cart) {
+                updateLiveInventory(slug, userSession.cart[slug]);
+            }
+            userCarts.delete(socket.id);
+        }
+    });
+});
+
+setInterval(() => {
+    const now = Date.now();
+    console.log(`Verificando carrinhos inativos... (${userCarts.size} carrinhos ativos)`);
+    userCarts.forEach((session, socketId) => {
+        if (now - session.lastActivity > CART_TIMEOUT_MS) {
+            console.log(`Carrinho do socket ${socketId} expirou. Liberando estoque...`);
+            const cart = session.cart;
+            if (cart) {
+                for (const slug in cart) {
+                    updateLiveInventory(slug, cart[slug]);
+                }
+            }
+            userCarts.delete(socketId);
+            io.to(socketId).emit('force_cart_reset');
+        }
+    });
+}, 60 * 1000); // Roda a cada 1 minuto
+
+// =================================================================================================
 // --- ROTAS DA API ---
 // =================================================================================================
-
 app.get('/api/loja/status', async (req, res) => {
     try {
         const { rows } = await db.query('SELECT aberta_manualmente, fechada_manualmente, horarios_json FROM configuracao_loja WHERE id = 1');
@@ -101,10 +216,7 @@ app.get('/api/loja/status', async (req, res) => {
             horarios: config && config.horarios_json ? JSON.parse(config.horarios_json) : {}
         };
 
-        if (!config) {
-            return res.json(response);
-        }
-
+        if (!config) return res.json(response);
         if (config.fechada_manualmente) {
             response.mensagem = 'Estamos temporariamente fechados. Voltamos em breve!';
             return res.json(response);
@@ -125,7 +237,6 @@ app.get('/api/loja/status', async (req, res) => {
         const agoraGoiânia = new Date(agoraUTC.getTime() - (3 * 60 * 60 * 1000));
         const diaDaSemana = agoraGoiânia.getUTCDay().toString();
         const horaAtual = agoraGoiânia.getUTCHours().toString().padStart(2, '0') + ":" + agoraGoiânia.getUTCMinutes().toString().padStart(2, '0');
-        
         const horarioDeHoje = horarios[diaDaSemana];
 
         if (!horarioDeHoje || !horarioDeHoje.ativo) {
@@ -145,7 +256,6 @@ app.get('/api/loja/status', async (req, res) => {
         res.status(500).json({ error: 'Erro ao verificar status da loja.' });
     }
 });
-
 app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
     try {
         const { rows } = await db.query('SELECT * FROM configuracao_loja WHERE id = 1');
@@ -155,7 +265,6 @@ app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
         res.status(500).json({ error: 'Erro ao buscar configurações.' });
     }
 });
-
 app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { aberta_manualmente, fechada_manualmente, horarios_json } = req.body;
@@ -163,13 +272,13 @@ app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (r
             'UPDATE configuracao_loja SET aberta_manualmente = $1, fechada_manualmente = $2, horarios_json = $3 WHERE id = 1',
             [aberta_manualmente, fechada_manualmente, JSON.stringify(horarios_json)]
         );
+        io.emit('cardapio_alterado'); // Avisa os clientes para recarregarem tudo
         res.json({ message: 'Configurações da loja atualizadas com sucesso!' });
     } catch (err) {
         console.error('[ERRO DETALHADO] em PUT /api/dashboard/loja/configuracoes:', err);
         res.status(500).json({ error: 'Erro ao atualizar configurações.' });
     }
 });
-
 app.post('/api/dashboard/loja/status-manual', protegerRota, async (req, res) => {
     try {
         const { aberta_manualmente, fechada_manualmente } = req.body;
@@ -177,52 +286,30 @@ app.post('/api/dashboard/loja/status-manual', protegerRota, async (req, res) => 
             'UPDATE configuracao_loja SET aberta_manualmente = $1, fechada_manualmente = $2 WHERE id = 1',
             [aberta_manualmente, fechada_manualmente]
         );
+        io.emit('cardapio_alterado'); // Avisa os clientes para recarregarem tudo
         res.json({ message: 'Status manual da loja atualizado com sucesso!' });
     } catch (err) {
         console.error('[ERRO DETALHADO] em POST /api/dashboard/loja/status-manual:', err);
         res.status(500).json({ error: 'Erro ao atualizar status manual da loja.' });
     }
 });
-
-// CORREÇÃO: Removido espaço inválido (non-breaking space) no início da consulta.
 const getCardapioCompleto = async () => {
-    const sql = `SELECT 
-            pb.id, pb.nome, pb.descricao, pb.imagem_url, pb.ordem, s.nome as setor_nome, s.id as setor_id,
-            COALESCE(
-                (SELECT json_agg(
-                    json_build_object('id', v.id, 'nome', v.nome, 'preco', v.preco, 'slug', v.slug, 'quantidade_estoque', v.quantidade_estoque) 
-                    ORDER BY v.id
-                ) FROM variacoes v WHERE v.produto_base_id = pb.id), '[]'::json
-            ) as variacoes
-        FROM produtos_base pb
-        LEFT JOIN setores s ON pb.setor_id = s.id
-        ORDER BY pb.ordem, pb.nome`;
+    const sql = `SELECT pb.id, pb.nome, pb.descricao, pb.imagem_url, pb.ordem, s.nome as setor_nome, s.id as setor_id, COALESCE((SELECT json_agg(json_build_object('id', v.id, 'nome', v.nome, 'preco', v.preco, 'slug', v.slug, 'quantidade_estoque', v.quantidade_estoque) ORDER BY v.id) FROM variacoes v WHERE v.produto_base_id = pb.id), '[]'::json) as variacoes FROM produtos_base pb LEFT JOIN setores s ON pb.setor_id = s.id ORDER BY pb.ordem, pb.nome`;
     const { rows } = await db.query(sql);
     return rows;
 };
-
 app.get('/api/cardapio', async (req, res) => {
-    try { 
-        const cardapio = await getCardapioCompleto();
-        res.json({ data: cardapio });
-    } catch (err) { 
-        res.status(500).json({ error: err.message }); 
-    }
+    try { const cardapio = await getCardapioCompleto(); res.json({ data: cardapio }); } 
+    catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.get('/api/produtos', async (req, res) => {
     try {
-        const sql = `SELECT v.id, v.slug, v.nome AS nome_variacao, v.preco, v.quantidade_estoque, pb.nome AS nome_base
-            FROM variacoes v JOIN produtos_base pb ON v.produto_base_id = pb.id`;
+        const sql = `SELECT v.id, v.slug, v.nome AS nome_variacao, v.preco, v.quantidade_estoque, pb.nome AS nome_base FROM variacoes v JOIN produtos_base pb ON v.produto_base_id = pb.id`;
         const { rows } = await db.query(sql);
-        const data = rows.map(r => ({
-            id: r.id, slug: r.slug, nome: `${r.nome_base} ${r.nome_variacao}`,
-            preco: r.preco, quantidade_estoque: r.quantidade_estoque
-        }));
+        const data = rows.map(r => ({id: r.id, slug: r.slug, nome: `${r.nome_base} ${r.nome_variacao}`, preco: r.preco, quantidade_estoque: r.quantidade_estoque}));
         res.json({ data });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.get('/api/dashboard/produtos', protegerRota, async (req, res) => {
     try {
         const produtos = await getCardapioCompleto();
@@ -232,7 +319,6 @@ app.get('/api/dashboard/produtos', protegerRota, async (req, res) => {
         res.status(500).json({ error: "Erro ao buscar produtos para o dashboard." }); 
     }
 });
-
 app.get('/setores', protegerRota, async (req, res) => {
     try {
         const { rows } = await db.query("SELECT * FROM setores ORDER BY nome");
@@ -242,19 +328,9 @@ app.get('/setores', protegerRota, async (req, res) => {
         res.status(500).json({ error: "Erro ao buscar setores." });
     }
 });
-
-// CORREÇÃO: Substituída a query por uma versão mais robusta com LEFT JOIN e GROUP BY.
 app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
     try {
-        const sql = `
-            SELECT
-                c.*,
-                COALESCE(json_agg(rc.*) FILTER (WHERE rc.id IS NOT NULL), '[]'::json) as regras
-            FROM combos c
-            LEFT JOIN regras_combo rc ON rc.combo_id = c.id
-            GROUP BY c.id
-            ORDER BY c.id;
-        `;
+        const sql = `SELECT c.*, COALESCE(json_agg(rc.*) FILTER (WHERE rc.id IS NOT NULL), '[]'::json) as regras FROM combos c LEFT JOIN regras_combo rc ON rc.combo_id = c.id GROUP BY c.id ORDER BY c.id;`;
         const { rows } = await db.query(sql);
         res.json({ data: rows });
     } catch (err) {
@@ -262,28 +338,23 @@ app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
         res.status(500).json({ error: "Erro ao buscar combos para o dashboard." });
     }
 });
-
 app.get('/api/combos', async (req, res) => {
     try {
-        const sql = `
-            SELECT c.*, COALESCE((SELECT json_agg(rc.*) FROM regras_combo rc WHERE rc.combo_id = c.id), '[]'::json) as regras
-            FROM combos c WHERE c.ativo = true ORDER BY c.id;
-        `;
+        const sql = `SELECT c.*, COALESCE((SELECT json_agg(rc.*) FROM regras_combo rc WHERE rc.combo_id = c.id), '[]'::json) as regras FROM combos c WHERE c.ativo = true ORDER BY c.id;`;
         const { rows } = await db.query(sql);
         res.json({ data: rows });
     } catch (err) { res.status(500).json({ error: "Erro ao buscar combos." }); }
 });
-
 app.post('/produtos_base', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     try {
         const { nome, descricao, setor_id } = req.body;
         if (!req.file) return res.status(400).json({ error: "A imagem é obrigatória." });
         const imagem_url = req.file.path;
         const { rows } = await db.query(`INSERT INTO produtos_base (nome, descricao, setor_id, imagem_url) VALUES ($1, $2, $3, $4) RETURNING id`,[nome, descricao, setor_id, imagem_url]);
+        io.emit('cardapio_alterado');
         res.status(201).json({ id: rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.put('/produtos_base/:id', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     try {
         const { id } = req.params;
@@ -300,17 +371,17 @@ app.put('/produtos_base/:id', protegerRota, apenasAdmin, upload.single('imagem')
         sql += ` WHERE id = $${paramCount}`;
         params.push(id);
         await db.query(sql, params);
+        io.emit('cardapio_alterado');
         res.json({ message: 'Produto base atualizado!' });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.delete('/produtos_base/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query(`DELETE FROM produtos_base WHERE id = $1`, [req.params.id]);
+        io.emit('cardapio_alterado');
         res.json({ message: 'Produto base e suas variações foram excluídos.' });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.post('/produtos_base/:id/duplicar', protegerRota, apenasAdmin, async (req, res) => {
     const client = await db.pool.connect();
     try {
@@ -320,17 +391,16 @@ app.post('/produtos_base/:id/duplicar', protegerRota, apenasAdmin, async (req, r
         if (!produto) throw new Error("Produto base não encontrado.");
         
         const novoNome = `${produto.nome} (cópia)`;
-        const { rows: newProdutoRows } = await client.query('INSERT INTO produtos_base (nome, descricao, imagem_url, setor_id) VALUES ($1, $2, $3, $4) RETURNING id',
-            [novoNome, produto.descricao, produto.imagem_url, produto.setor_id]);
+        const { rows: newProdutoRows } = await client.query('INSERT INTO produtos_base (nome, descricao, imagem_url, setor_id) VALUES ($1, $2, $3, $4) RETURNING id', [novoNome, produto.descricao, produto.imagem_url, produto.setor_id]);
         const novoProdutoBaseId = newProdutoRows[0].id;
 
         const { rows: variacoes } = await client.query('SELECT * FROM variacoes WHERE produto_base_id = $1', [req.params.id]);
         for(const v of variacoes) {
             const novoSlug = `${v.slug}-copia-${Date.now()}`;
-            await client.query('INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, $5)',
-                [novoProdutoBaseId, v.nome, novoSlug, v.preco, v.quantidade_estoque]);
+            await client.query('INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, $5)', [novoProdutoBaseId, v.nome, novoSlug, v.preco, v.quantidade_estoque]);
         }
         await client.query('COMMIT');
+        io.emit('cardapio_alterado');
         res.json({ message: 'Produto base e suas variações duplicados com sucesso!', newId: novoProdutoBaseId });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -340,77 +410,46 @@ app.post('/produtos_base/:id/duplicar', protegerRota, apenasAdmin, async (req, r
         client.release();
     }
 });
-
 app.post('/setores', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { rows } = await db.query(`INSERT INTO setores (nome) VALUES ($1) RETURNING id`, [req.body.nome]);
+        io.emit('cardapio_alterado');
         res.status(201).json({ id: rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.put('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query(`UPDATE setores SET nome = $1 WHERE id = $2`, [req.body.nome, req.params.id]);
+        io.emit('cardapio_alterado');
         res.json({ message: "Setor atualizado." });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.delete('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query(`DELETE FROM setores WHERE id = $1`, [req.params.id]);
+        io.emit('cardapio_alterado');
         res.json({ message: "Setor excluído." });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
-app.post('/variacao/estoque', protegerRota, async (req, res) => {
-    try {
-        const { id, quantidade } = req.body;
-        await db.query(`UPDATE variacoes SET quantidade_estoque = $1 WHERE id = $2`, [quantidade, id]);
-        res.json({ message: `Estoque da variação atualizado.` });
-    } catch (err) { res.status(500).json({ "error": err.message }); }
-});
-
-app.post('/variacoes', protegerRota, apenasAdmin, async (req, res) => {
-    try {
-        const { produto_base_id, nome, slug, preco } = req.body;
-        const { rows } = await db.query(`INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, 0) RETURNING id`,
-            [produto_base_id, nome, slug, preco]);
-        res.status(201).json({ id: rows[0].id });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.put('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
-    try {
-        const { nome, slug, preco } = req.body;
-        await db.query(`UPDATE variacoes SET nome = $1, slug = $2, preco = $3 WHERE id = $4`,
-            [nome, slug, preco, req.params.id]);
-        res.json({ message: 'Variação atualizada!' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 app.delete('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query(`DELETE FROM variacoes WHERE id = $1`, [req.params.id]);
+        io.emit('cardapio_alterado');
         res.json({ message: 'Variação excluída.' });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.post('/variacoes/:id/duplicar', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { rows } = await db.query('SELECT * FROM variacoes WHERE id = $1', [req.params.id]);
         const variacao = rows[0];
         if (!variacao) return res.status(404).json({ error: "Variação não encontrada." });
-
         const novoNome = `${variacao.nome} (cópia)`;
         const novoSlug = `${variacao.slug}-copia-${Date.now()}`;
-        
-        const { rows: newRows } = await db.query('INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-            [variacao.produto_base_id, novoNome, novoSlug, variacao.preco, variacao.quantidade_estoque]);
-        
+        const { rows: newRows } = await db.query('INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, $5) RETURNING id', [variacao.produto_base_id, novoNome, novoSlug, variacao.preco, variacao.quantidade_estoque]);
+        io.emit('cardapio_alterado');
         res.json({ message: 'Variação duplicada com sucesso!', newId: newRows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.post('/dashboard/produtos/reordenar', protegerRota, apenasAdmin, async (req, res) => {
     const { order } = req.body;
     if (!order || !Array.isArray(order)) { return res.status(400).json({ error: "Formato de ordem inválido." }); }
@@ -421,6 +460,7 @@ app.post('/dashboard/produtos/reordenar', protegerRota, apenasAdmin, async (req,
             await client.query("UPDATE produtos_base SET ordem = $1 WHERE id = $2", [i, order[i]]);
         }
         await client.query('COMMIT');
+        io.emit('cardapio_alterado');
         res.json({ message: "Ordem dos produtos atualizada com sucesso!" });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -430,7 +470,6 @@ app.post('/dashboard/produtos/reordenar', protegerRota, apenasAdmin, async (req,
         client.release();
     }
 });
-
 app.post('/pedido', protegerRota, async (req, res) => {
     const { itens } = req.body;
     if (!itens || !Array.isArray(itens) || itens.length === 0) {
@@ -440,11 +479,15 @@ app.post('/pedido', protegerRota, async (req, res) => {
     try {
         await client.query('BEGIN');
         for (const item of itens) {
-            const updateQuery = "UPDATE variacoes SET quantidade_estoque = quantidade_estoque - $1 WHERE id = $2 AND quantidade_estoque >= $1";
+            const updateQuery = "UPDATE variacoes SET quantidade_estoque = quantidade_estoque - $1 WHERE id = $2 AND quantidade_estoque >= $1 RETURNING slug, quantidade_estoque";
             const result = await client.query(updateQuery, [item.qtd, item.id]);
             if (result.rowCount === 0) {
                 throw new Error(`Estoque insuficiente para o item ID ${item.id}.`);
             }
+            // Atualiza o estoque virtual após a confirmação do pedido no banco
+            const { slug, quantidade_estoque } = result.rows[0];
+            liveInventory[slug] = quantidade_estoque;
+            io.emit('estoque_atualizado', { slug, novaQuantidade: liveInventory[slug] });
         }
         await client.query('COMMIT');
         res.json({ message: "Processo de baixa de estoque concluído com sucesso." });
@@ -456,82 +499,21 @@ app.post('/pedido', protegerRota, async (req, res) => {
         client.release();
     }
 });
-
-app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
-    if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
-    const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
-    if (!req.file) return res.status(400).json({ error: "A imagem para o combo é obrigatória." });
-    const imagem_url = req.file.path;
-    const client = await db.pool.connect();
-    try {
-        await client.query('BEGIN');
-        const comboSql = `INSERT INTO combos (nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, imagem_url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id;`;
-        const comboResult = await client.query(comboSql, [nome, descricao, parseFloat(preco_base), parseInt(quantidade_itens_obrigatoria), ativo, imagem_url]);
-        const comboId = comboResult.rows[0].id;
-        if (regras && regras.length > 0) {
-            for (const regra of regras) {
-                const regraSql = `INSERT INTO regras_combo (combo_id, setor_id_alvo, produto_base_id_alvo, upcharge) VALUES ($1, $2, $3, $4);`;
-                await client.query(regraSql, [comboId, regra.setor_id_alvo || null, regra.produto_base_id_alvo || null, parseFloat(regra.upcharge) || 0]);
-            }
-        }
-        await client.query('COMMIT');
-        res.status(201).json({ id: comboId, message: 'Combo criado com sucesso!' });
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error("Erro ao criar combo:", err);
-        res.status(500).json({ error: "Falha ao criar o combo." });
-    } finally {
-        client.release();
-    }
-});
-
-app.put('/api/dashboard/combos/:id', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
-    const { id } = req.params;
-    if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
-    const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
-    let imagem_url;
-    if (req.file) { imagem_url = req.file.path; }
-    const client = await db.pool.connect();
-    try {
-        await client.query('BEGIN');
-        let comboSql = 'UPDATE combos SET nome = $1, descricao = $2, preco_base = $3, quantidade_itens_obrigatoria = $4, ativo = $5';
-        const params = [nome, descricao, parseFloat(preco_base), parseInt(quantidade_itens_obrigatoria), ativo];
-        let paramCount = 6;
-        if (imagem_url) {
-            comboSql += `, imagem_url = $${paramCount++}`;
-            params.push(imagem_url);
-        }
-        comboSql += ` WHERE id = $${paramCount}`;
-        params.push(id);
-        await client.query(comboSql, params);
-        await client.query('DELETE FROM regras_combo WHERE combo_id = $1', [id]);
-        if (regras && regras.length > 0) {
-            for (const regra of regras) {
-                const regraSql = `INSERT INTO regras_combo (combo_id, setor_id_alvo, produto_base_id_alvo, upcharge) VALUES ($1, $2, $3, $4);`;
-                await client.query(regraSql, [id, regra.setor_id_alvo || null, regra.produto_base_id_alvo || null, parseFloat(regra.upcharge) || 0]);
-            }
-        }
-        await client.query('COMMIT');
-        res.json({ message: 'Combo atualizado com sucesso!' });
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error(`Erro ao atualizar combo ${id}:`, err);
-        res.status(500).json({ error: "Falha ao atualizar o combo." });
-    } finally {
-        client.release();
-    }
-});
-
 app.delete('/api/dashboard/combos/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query('DELETE FROM combos WHERE id = $1', [req.params.id]);
+        io.emit('cardapio_alterado');
         res.json({ message: 'Combo excluído com sucesso.' });
     } catch (err) { res.status(500).json({ error: 'Falha ao excluir o combo.' }); }
 });
 
+// =================================================================================================
+// --- INICIALIZAÇÃO DO SERVIDOR ---
+// =================================================================================================
 const iniciarServidor = async () => {
-    app.listen(PORT, () => {
-        console.log(`Servidor rodando na porta ${PORT}`);
+    await initializeInventory();
+    server.listen(PORT, () => {
+        console.log(`Servidor rodando e ouvindo na porta ${PORT}`);
     });
 };
 
