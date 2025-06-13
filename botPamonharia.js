@@ -18,9 +18,10 @@ function log(level, context, message) {
 const CONFIG = {
     CARDAPIO_URL: 'https://pamonhariasaborosa.expertbr.com/cardapio',
     API_URL: process.env.BACKEND_URL || 'http://localhost:10000',
-    ATENDENTE_CONTATO: '5562992819889' // ATENÇÃO: Coloque seu número de teste aqui por enquanto
+    ATENDENTE_CONTATO: '5562992819889'
 };
 
+// --- CONFIGURAÇÃO DO CLIENTE WHATSAPP (VERSÃO FINAL E OTIMIZADA) ---
 const client = new Client({
     authStrategy: new LocalAuth({
         clientId: "bot-pamonharia-concierge",
@@ -28,7 +29,20 @@ const client = new Client({
     }),
     puppeteer: {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process', // Essencial para ambientes com recursos limitados como o Docker
+            '--disable-gpu'
+        ],
+    },
+    webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
     }
 });
 
