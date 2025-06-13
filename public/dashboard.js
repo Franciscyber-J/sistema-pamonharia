@@ -64,52 +64,47 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- LÓGICA DE CARREGAMENTO DE DADOS (COM LOGS DETALHADOS) ---
+    // --- LÓGICA DE CARREGAMENTO DE DADOS (OTIMIZADA) ---
     async function carregarTudo() {
         try {
-            console.log('Iniciando carregamento de dados do dashboard...');
+            mostrarToast('Carregando dados...', 'info');
             
-            console.log('1. Buscando setores...');
-            const setoresRes = await fetchProtegido(`${backendUrl}/setores`);
-            if (!setoresRes.ok) throw new Error(`Falha ao buscar setores: ${setoresRes.statusText}`);
+            // Revertido para Promise.all para carregamento paralelo e mais rápido
+            const [setoresRes, produtosRes, combosRes, configRes] = await Promise.all([
+                fetchProtegido(`${backendUrl}/setores`),
+                fetchProtegido(`${backendUrl}/api/dashboard/produtos`),
+                fetchProtegido(`${backendUrl}/api/dashboard/combos`),
+                fetchProtegido(`${backendUrl}/api/dashboard/loja/configuracoes`)
+            ]);
+
+            if (!setoresRes.ok || !produtosRes.ok || !combosRes.ok || !configRes.ok) {
+                // Tenta pegar o erro da primeira resposta que falhou
+                const failedResponse = [setoresRes, produtosRes, combosRes, configRes].find(r => !r.ok);
+                const errorPayload = await failedResponse.json();
+                throw new Error(errorPayload.error || `Falha ao carregar dados: ${failedResponse.statusText}`);
+            }
+            
             cache.setores = (await setoresRes.json()).data;
-            console.log('Setores carregados com sucesso.');
-
-            console.log('2. Buscando produtos...');
-            const produtosRes = await fetchProtegido(`${backendUrl}/api/dashboard/produtos`);
-            if (!produtosRes.ok) throw new Error(`Falha ao buscar produtos: ${produtosRes.statusText}`);
             cache.produtos = (await produtosRes.json()).data;
-            console.log('Produtos carregados com sucesso.');
-            
-            console.log('3. Buscando combos...');
-            const combosRes = await fetchProtegido(`${backendUrl}/api/dashboard/combos`);
-            if (!combosRes.ok) throw new Error(`Falha ao buscar combos: ${combosRes.statusText}`);
             cache.combos = (await combosRes.json()).data;
-            console.log('Combos carregados com sucesso.');
-
-            console.log('4. Buscando configurações...');
-            const configRes = await fetchProtegido(`${backendUrl}/api/dashboard/loja/configuracoes`);
-            if (!configRes.ok) throw new Error(`Falha ao buscar configurações: ${configRes.statusText}`);
             cache.configuracoes = await configRes.json();
-            console.log('Configurações carregadas com sucesso.');
-
-            console.log('Todos os dados foram carregados. Renderizando componentes...');
+            
             renderizarGerenciadorProdutos();
             renderizarGerenciadorSetores();
             renderizarGerenciadorCombos();
             renderizarConfiguracoesLoja();
-
+            
             inicializarDragAndDrop();
-            aplicarPermissoes();
-            console.log('Renderização e aplicação de permissões concluídas.');
+            aplicarPermissoes(); // Aplicar permissões depois que tudo foi renderizado
+            
             mostrarToast('Dashboard carregado!', 'sucesso');
 
         } catch (err) {
-            // LOG: Erro detalhado no console do navegador
             console.error('ERRO CRÍTICO AO CARREGAR O DASHBOARD:', err);
             mostrarToast(err.message, 'erro');
         }
     }
+
 
     // --- LÓGICA DE AUTENTICAÇÃO E SESSÃO ---
     async function handleLogin(event) {
@@ -192,15 +187,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const allTabs = document.querySelectorAll('.tab-button');
         const allContents = document.querySelectorAll('.tab-content');
         
-        allTabs.forEach(tab => tab.classList.remove('active'));
-        allContents.forEach(content => content.classList.remove('active'));
-        
-        const firstVisibleTab = Array.from(allTabs).find(tab => tab.style.display !== 'none');
-        if (firstVisibleTab) {
-            firstVisibleTab.classList.add('active');
-            const contentId = firstVisibleTab.dataset.tab;
-            const contentToShow = document.getElementById(contentId);
-            if(contentToShow) contentToShow.classList.add('active');
+        const activeTab = document.querySelector('.tab-button.active');
+        // Se nenhuma aba estiver ativa ou a ativa estiver oculta, ativa a primeira visível
+        if (!activeTab || activeTab.style.display === 'none') {
+            allTabs.forEach(tab => tab.classList.remove('active'));
+            allContents.forEach(content => content.classList.remove('active'));
+            
+            const firstVisibleTab = Array.from(allTabs).find(tab => tab.style.display !== 'none');
+            if (firstVisibleTab) {
+                firstVisibleTab.classList.add('active');
+                const contentId = firstVisibleTab.dataset.tab;
+                const contentToShow = document.getElementById(contentId);
+                if(contentToShow) contentToShow.classList.add('active');
+            }
         }
     }
 
@@ -217,9 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return response;
     }
     
-    // O restante do arquivo é idêntico ao da resposta anterior
-    // ...
-    // ... (incluindo todas as funções render, handle, etc.)
+    // --- LÓGICA DE RENDERIZAÇÃO ---
     function renderizarGerenciadorProdutos() {
         if(!gerenciadorProdutos) return;
         gerenciadorProdutos.innerHTML = ''; 
@@ -360,14 +357,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         </label>
                     </div>
                 </div>
-
                 <div class="config-section" data-admin-only>
                     <h3>Horários de Funcionamento Programados</h3>
                     <div class="horarios-grid">
                         ${htmlHorarios}
                     </div>
                 </div>
-                
                 <div class="form-buttons" style="margin-top: 20px;">
                     <button type="submit" class="save-btn">Salvar Configurações</button>
                 </div>
