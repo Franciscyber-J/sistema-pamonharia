@@ -1,27 +1,11 @@
-# fly.toml (versão final e corrigida)
-
 app = "pamonharia-saborosa-bot"
 primary_region = "gru"
 
 [build]
-  # Usando o builder mais novo para evitar o erro de "sunset"
   builder = "heroku/builder:22"
-
-[http_service]
-  internal_port = 8080
-  force_https = true
-  auto_stop_machines = true
-  auto_start_machines = true
-  min_machines_running = 0
-  processes = ["app"]
 
 [processes]
   app = "npm run start:bot"
-
-[[vm]]
-  cpu_kind = "shared"
-  cpus = 1
-  memory_mb = 1024
 
 [mounts]
   source = "wwebjs_auth_data"
