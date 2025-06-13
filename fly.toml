@@ -5,7 +5,7 @@ primary_region = "gru"
 
 [build]
   # Usando o builder mais novo para evitar o erro de "sunset"
-  builder = "heroku/builder:20"
+  builder = "heroku/builder:22"
 
 [http_service]
   internal_port = 8080
