@@ -29,5 +29,8 @@
     "socket.io": "^4.8.1",
     "sqlite3": "^5.1.7",
     "whatsapp-web.js": "^1.30.0"
+  },
+  "devDependencies": {
+    "@flydotio/dockerfile": "^0.7.10"
   }
 }
