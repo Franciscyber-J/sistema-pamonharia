@@ -2,6 +2,7 @@
 FROM node:18-slim
 
 # Instala as dependências de sistema necessárias para o Puppeteer (usado pelo whatsapp-web.js) rodar corretamente.
+# ADICIONADO libdrm2 à lista.
 RUN apt-get update && apt-get install -yq \
     gconf-service \
     libasound2 \
@@ -41,6 +42,7 @@ RUN apt-get update && apt-get install -yq \
     lsb-release \
     xdg-utils \
     wget \
+    libdrm2 \
     --no-install-recommends
 
 # Define o diretório de trabalho dentro do container
