@@ -74,7 +74,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetchProtegido(`${backendUrl}/api/dashboard/combos`),
                 fetchProtegido(`${backendUrl}/api/dashboard/loja/configuracoes`)
             ]);
-            if(!setoresRes.ok || !produtosRes.ok || !combosRes.ok || !configRes.ok) throw new Error("Falha ao carregar dados do servidor.");
+
+            if (!setoresRes.ok || !produtosRes.ok || !combosRes.ok || !configRes.ok) {
+                const errorPayload = await (setoresRes.ok ? produtosRes.ok ? combosRes.ok ? configRes : configRes : combosRes : setoresRes).json();
+                throw new Error(errorPayload.error || "Falha ao carregar dados do servidor.");
+            }
             
             cache.setores = (await setoresRes.json()).data;
             cache.produtos = (await produtosRes.json()).data;
@@ -88,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             inicializarDragAndDrop();
             aplicarPermissoes();
+
         } catch (err) {
             mostrarToast(err.message, 'erro');
             console.error(err);
@@ -163,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isOperador = usuario.cargo === 'operador';
 
         document.querySelectorAll('[data-admin-only]').forEach(el => {
-            el.style.display = isOperador ? 'none' : (el.tagName === 'DIV' || el.tagName === 'BUTTON' ? 'block' : '');
+            el.style.display = isOperador ? 'none' : '';
         });
 
         if (sortable) sortable.option("disabled", isOperador);
@@ -172,13 +177,18 @@ document.addEventListener('DOMContentLoaded', () => {
             el.style.cursor = isOperador ? 'default' : 'grab';
         });
 
-        // Garante que a primeira aba visível para o usuário seja ativada, se nenhuma estiver
-        const activeTab = document.querySelector('.tab-button.active');
-        if (!activeTab || activeTab.style.display === 'none') {
-            const firstVisibleTab = document.querySelector('.tab-button:not([style*="display: none"])');
-            if (firstVisibleTab) {
-                firstVisibleTab.click();
-            }
+        const allTabs = document.querySelectorAll('.tab-button');
+        const allContents = document.querySelectorAll('.tab-content');
+        
+        allTabs.forEach(tab => tab.classList.remove('active'));
+        allContents.forEach(content => content.classList.remove('active'));
+        
+        const firstVisibleTab = Array.from(allTabs).find(tab => tab.style.display !== 'none');
+        if (firstVisibleTab) {
+            firstVisibleTab.classList.add('active');
+            const contentId = firstVisibleTab.dataset.tab;
+            const contentToShow = document.getElementById(contentId);
+            if(contentToShow) contentToShow.classList.add('active');
         }
     }
 
@@ -197,6 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- LÓGICA DE RENDERIZAÇÃO ---
     function renderizarGerenciadorProdutos() {
+        if(!gerenciadorProdutos) return;
         gerenciadorProdutos.innerHTML = ''; 
         cache.produtos.forEach(pb => {
             const cardDiv = document.createElement('div');
@@ -251,6 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     function renderizarGerenciadorSetores() {
         const containerSetores = document.getElementById('Setores');
+        if(!containerSetores) return;
         containerSetores.innerHTML = `<div class="form-section"><h2>Gerenciar Setores</h2><form id="form-setor"><input type="hidden" id="setor-id"><label for="nome-setor">Nome do Setor:</label><input type="text" id="nome-setor" placeholder="Ex: Pamonhas, Bebidas, Doces" required><div class="form-buttons"><button type="submit" class="save-btn">Salvar Setor</button><button type="button" class="cancel-btn" id="btn-limpar-form-setor">Limpar</button></div></form><h3>Setores Existentes:</h3><ul id="lista-setores"></ul></div>`;
         const listaUl = document.getElementById('lista-setores');
         listaUl.innerHTML = '';
@@ -264,6 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderizarGerenciadorCombos() {
+        if(!gerenciadorCombos) return;
         gerenciadorCombos.innerHTML = '';
         if (!cache.combos) return;
         cache.combos.forEach(combo => {
@@ -289,6 +302,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     function renderizarConfiguracoesLoja() {
         const container = document.getElementById('Configuracoes');
+        if(!container) return;
         const diasDaSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
         
         let htmlHorarios = diasDaSemana.map((dia, index) => `
@@ -386,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function popularFormConfiguracoes() {
         const config = cache.configuracoes;
-        if (!config) return;
+        if (!config || !document.getElementById('form-configuracoes')) return;
 
         const checkAberto = document.getElementById('aberta-manualmente');
         const checkFechado = document.getElementById('fechada-manualmente');
@@ -394,7 +408,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(checkFechado) checkFechado.checked = config.fechada_manualmente;
         
         const horariosGrid = document.querySelector('.horarios-grid');
-        if (horariosGrid && horariosGrid.offsetParent !== null) { // Verifica se está visível
+        if (horariosGrid && horariosGrid.style.display !== 'none') {
             const horarios = JSON.parse(config.horarios_json || '{}');
             for (let i = 0; i < 7; i++) {
                 const diaConfig = horarios[i];
@@ -448,9 +462,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // As demais funções (modais, handlers, etc.) permanecem inalteradas.
-    // [ ... ]
-    // (O código completo para essas seções está omitido aqui para brevidade, mas deve ser mantido no seu arquivo final)
     function abrirModalProdutoBase(id = null) {
         const form = document.getElementById('form-produto-base');
         const dropdownSetores = document.getElementById('pb-setor');
@@ -781,17 +792,19 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('group-regra-produto').style.display = tipo === 'produto' ? 'block' : 'none';
     }
 
-    // --- FUNÇÕES UTILITÁRIAS ---
     function fecharModais() {
         regrasTemporarias = [];
         document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
     }
+
     function mostrarToast(mensagem, tipo = 'sucesso') {
         const toast = document.getElementById('toast-notification');
-        toast.textContent = mensagem; toast.className = '';
+        toast.textContent = mensagem; 
+        toast.className = '';
         toast.classList.add('toast', tipo, 'show');
         setTimeout(() => { toast.classList.remove('show');}, 3000);
     }
+
     function setupTabs() {
         const tabButtons = document.querySelectorAll('.tab-button');
         const tabContents = document.querySelectorAll('.tab-content');
@@ -806,6 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
+
     function inicializarDragAndDrop() {
         const container = document.getElementById('gerenciador-produtos');
         if (sortable) sortable.destroy();
@@ -820,7 +834,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-     function abrirMenuAcoes(targetButton) {
+
+    function abrirMenuAcoes(targetButton) {
         const type = targetButton.dataset.type;
         const id = parseInt(targetButton.dataset.id);
         const pbId = parseInt(targetButton.dataset.pbId);
