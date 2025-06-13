@@ -16,7 +16,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*", // Em um ambiente de produção, é recomendado restringir ao seu domínio
+        origin: "*",
         methods: ["GET", "POST"]
     }
 });
@@ -99,15 +99,15 @@ const apenasAdmin = (req, res, next) => {
 // =================================================================================================
 // --- GERENCIAMENTO DE ESTOQUE E TIMEOUT EM TEMPO REAL ---
 // =================================================================================================
-let liveInventory = {}; // Formato: { 'slug-do-produto': 50 }
-const userCarts = new Map(); // Formato: socket.id => { cart: {}, lastActivity: Date.now() }
-const CART_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos
+let liveInventory = {};
+const userCarts = new Map();
+const CART_TIMEOUT_MS = 15 * 60 * 1000;
 
 async function initializeInventory() {
     try {
         console.log('Inicializando o inventário em tempo real...');
         const { rows } = await db.query('SELECT slug, quantidade_estoque FROM variacoes');
-        liveInventory = {}; // Limpa o inventário antigo
+        liveInventory = {};
         rows.forEach(item => {
             liveInventory[item.slug] = item.quantidade_estoque;
         });
@@ -117,11 +117,11 @@ async function initializeInventory() {
     }
 }
 
-function updateLiveInventory(slug, change) {
+function updateLiveInventoryAndBroadcast(slug, change) {
     if (liveInventory[slug] !== undefined) {
         liveInventory[slug] += change;
     }
-    io.emit('estoque_atualizado', { slug, novaQuantidade: liveInventory[slug] });
+    io.emit('estoque_atualizado', { [slug]: liveInventory[slug] });
     console.log(`Estoque de ${slug} alterado em ${change}. Novo total virtual: ${liveInventory[slug]}`);
 }
 
@@ -130,45 +130,55 @@ function updateLiveInventory(slug, change) {
 // =================================================================================================
 io.on('connection', (socket) => {
     console.log('Um cliente se conectou:', socket.id);
-    userCarts.set(socket.id, { cart: {}, lastActivity: Date.now() });
+    userCarts.set(socket.id, { cart: [], lastActivity: Date.now() });
 
     socket.emit('estado_inicial_estoque', liveInventory);
 
-    socket.on('carrinho_alterado', (cartItems) => {
+    socket.on('adicionar_item_carrinho', (item) => {
+        const userSession = userCarts.get(socket.id);
+        if (!userSession) return;
+        
+        userSession.lastActivity = Date.now();
+
+        if (liveInventory[item.slug] >= item.quantidade) {
+            updateLiveInventoryAndBroadcast(item.slug, -item.quantidade);
+
+            const existingItem = userSession.cart.find(i => i.id === item.id);
+            if(existingItem) {
+                existingItem.quantidade += item.quantidade;
+            } else {
+                userSession.cart.push(item);
+            }
+            
+            socket.emit('carrinho_atualizado', userSession.cart);
+        } else {
+            socket.emit('falha_adicionar_item', { nome: item.nome, estoque_disponivel: liveInventory[item.slug] });
+        }
+    });
+
+    socket.on('remover_item_carrinho', (itemId) => {
         const userSession = userCarts.get(socket.id);
         if (!userSession) return;
 
-        const previousCart = userSession.cart;
+        userSession.lastActivity = Date.now();
+        const itemIndex = userSession.cart.findIndex(i => i.id === itemId);
 
-        // Devolve os itens do carrinho antigo ao inventário
-        for (const slug in previousCart) {
-            updateLiveInventory(slug, previousCart[slug]);
+        if (itemIndex > -1) {
+            const item = userSession.cart[itemIndex];
+            updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
+            userSession.cart.splice(itemIndex, 1);
+            socket.emit('carrinho_atualizado', userSession.cart);
         }
-
-        const newCart = {};
-        let canReserveAll = true;
-        for (const item of cartItems) {
-            if (liveInventory[item.slug] >= item.quantidade) {
-                newCart[item.slug] = (newCart[item.slug] || 0) + item.quantidade;
-            } else {
-                canReserveAll = false;
-                break;
+    });
+    
+    socket.on('limpar_carrinho', () => {
+        const userSession = userCarts.get(socket.id);
+        if (userSession && userSession.cart) {
+            for (const item of userSession.cart) {
+                updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
             }
-        }
-
-        if (canReserveAll) {
-            for (const slug in newCart) {
-                updateLiveInventory(slug, -newCart[slug]);
-            }
-            userSession.cart = newCart;
-            userSession.lastActivity = Date.now();
-            userCarts.set(socket.id, userSession);
-            socket.emit('reserva_carrinho_sucesso');
-        } else {
-            for (const slug in previousCart) {
-                updateLiveInventory(slug, -previousCart[slug]);
-            }
-            socket.emit('reserva_carrinho_falha');
+            userSession.cart = [];
+            socket.emit('carrinho_atualizado', userSession.cart);
         }
     });
 
@@ -176,8 +186,8 @@ io.on('connection', (socket) => {
         console.log('Um cliente se desconectou:', socket.id);
         const userSession = userCarts.get(socket.id);
         if (userSession && userSession.cart) {
-            for (const slug in userSession.cart) {
-                updateLiveInventory(slug, userSession.cart[slug]);
+            for (const item of userSession.cart) {
+                updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
             }
             userCarts.delete(socket.id);
         }
@@ -186,21 +196,20 @@ io.on('connection', (socket) => {
 
 setInterval(() => {
     const now = Date.now();
-    console.log(`Verificando carrinhos inativos... (${userCarts.size} carrinhos ativos)`);
     userCarts.forEach((session, socketId) => {
         if (now - session.lastActivity > CART_TIMEOUT_MS) {
             console.log(`Carrinho do socket ${socketId} expirou. Liberando estoque...`);
             const cart = session.cart;
-            if (cart) {
-                for (const slug in cart) {
-                    updateLiveInventory(slug, cart[slug]);
+            if (cart && cart.length > 0) {
+                for (const item of cart) {
+                    updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
                 }
             }
             userCarts.delete(socketId);
             io.to(socketId).emit('force_cart_reset');
         }
     });
-}, 60 * 1000); // Roda a cada 1 minuto
+}, 60 * 1000);
 
 // =================================================================================================
 // --- ROTAS DA API ---
@@ -268,11 +277,8 @@ app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
 app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { aberta_manualmente, fechada_manualmente, horarios_json } = req.body;
-        await db.query(
-            'UPDATE configuracao_loja SET aberta_manualmente = $1, fechada_manualmente = $2, horarios_json = $3 WHERE id = 1',
-            [aberta_manualmente, fechada_manualmente, JSON.stringify(horarios_json)]
-        );
-        io.emit('cardapio_alterado'); // Avisa os clientes para recarregarem tudo
+        await db.query('UPDATE configuracao_loja SET aberta_manualmente = $1, fechada_manualmente = $2, horarios_json = $3 WHERE id = 1', [aberta_manualmente, fechada_manualmente, JSON.stringify(horarios_json)]);
+        io.emit('cardapio_alterado');
         res.json({ message: 'Configurações da loja atualizadas com sucesso!' });
     } catch (err) {
         console.error('[ERRO DETALHADO] em PUT /api/dashboard/loja/configuracoes:', err);
@@ -282,11 +288,8 @@ app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (r
 app.post('/api/dashboard/loja/status-manual', protegerRota, async (req, res) => {
     try {
         const { aberta_manualmente, fechada_manualmente } = req.body;
-        await db.query(
-            'UPDATE configuracao_loja SET aberta_manualmente = $1, fechada_manualmente = $2 WHERE id = 1',
-            [aberta_manualmente, fechada_manualmente]
-        );
-        io.emit('cardapio_alterado'); // Avisa os clientes para recarregarem tudo
+        await db.query('UPDATE configuracao_loja SET aberta_manualmente = $1, fechada_manualmente = $2 WHERE id = 1', [aberta_manualmente, fechada_manualmente]);
+        io.emit('cardapio_alterado');
         res.json({ message: 'Status manual da loja atualizado com sucesso!' });
     } catch (err) {
         console.error('[ERRO DETALHADO] em POST /api/dashboard/loja/status-manual:', err);
@@ -350,9 +353,9 @@ app.post('/produtos_base', protegerRota, apenasAdmin, upload.single('imagem'), a
         const { nome, descricao, setor_id } = req.body;
         if (!req.file) return res.status(400).json({ error: "A imagem é obrigatória." });
         const imagem_url = req.file.path;
-        const { rows } = await db.query(`INSERT INTO produtos_base (nome, descricao, setor_id, imagem_url) VALUES ($1, $2, $3, $4) RETURNING id`,[nome, descricao, setor_id, imagem_url]);
+        await db.query(`INSERT INTO produtos_base (nome, descricao, setor_id, imagem_url) VALUES ($1, $2, $3, $4) RETURNING id`,[nome, descricao, setor_id, imagem_url]);
         io.emit('cardapio_alterado');
-        res.status(201).json({ id: rows[0].id });
+        res.status(201).send();
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.put('/produtos_base/:id', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
@@ -393,7 +396,6 @@ app.post('/produtos_base/:id/duplicar', protegerRota, apenasAdmin, async (req, r
         const novoNome = `${produto.nome} (cópia)`;
         const { rows: newProdutoRows } = await client.query('INSERT INTO produtos_base (nome, descricao, imagem_url, setor_id) VALUES ($1, $2, $3, $4) RETURNING id', [novoNome, produto.descricao, produto.imagem_url, produto.setor_id]);
         const novoProdutoBaseId = newProdutoRows[0].id;
-
         const { rows: variacoes } = await client.query('SELECT * FROM variacoes WHERE produto_base_id = $1', [req.params.id]);
         for(const v of variacoes) {
             const novoSlug = `${v.slug}-copia-${Date.now()}`;
@@ -412,9 +414,9 @@ app.post('/produtos_base/:id/duplicar', protegerRota, apenasAdmin, async (req, r
 });
 app.post('/setores', protegerRota, apenasAdmin, async (req, res) => {
     try {
-        const { rows } = await db.query(`INSERT INTO setores (nome) VALUES ($1) RETURNING id`, [req.body.nome]);
+        await db.query(`INSERT INTO setores (nome) VALUES ($1) RETURNING id`, [req.body.nome]);
         io.emit('cardapio_alterado');
-        res.status(201).json({ id: rows[0].id });
+        res.status(201).send();
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.put('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
@@ -429,6 +431,14 @@ app.delete('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
         await db.query(`DELETE FROM setores WHERE id = $1`, [req.params.id]);
         io.emit('cardapio_alterado');
         res.json({ message: "Setor excluído." });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/variacoes', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        const { produto_base_id, nome, slug, preco } = req.body;
+        await db.query(`INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, 0) RETURNING id`, [produto_base_id, nome, slug, preco]);
+        io.emit('cardapio_alterado');
+        res.status(201).send();
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.delete('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
@@ -484,10 +494,9 @@ app.post('/pedido', protegerRota, async (req, res) => {
             if (result.rowCount === 0) {
                 throw new Error(`Estoque insuficiente para o item ID ${item.id}.`);
             }
-            // Atualiza o estoque virtual após a confirmação do pedido no banco
             const { slug, quantidade_estoque } = result.rows[0];
             liveInventory[slug] = quantidade_estoque;
-            io.emit('estoque_atualizado', { slug, novaQuantidade: liveInventory[slug] });
+            io.emit('estoque_atualizado', { [slug]: liveInventory[slug] });
         }
         await client.query('COMMIT');
         res.json({ message: "Processo de baixa de estoque concluído com sucesso." });

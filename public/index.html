@@ -158,8 +158,8 @@
         </div>
     </footer>
 
-    <div class="modal-backdrop" id="variations-modal"><div class="modal"><div class="modal-header"><h2 id="modal-product-name"></h2><button class="modal-close-btn" onclick="fecharModal()">×</button></div><div class="modal-body" id="modal-variations-list"></div><div class="modal-footer"><button class="add-button" onclick="adicionarVariacoesAoCarrinho()">Adicionar ao Pedido</button></div></div></div>
-    <div class="modal-backdrop" id="combo-builder-modal"><div class="modal"><div class="modal-header"><h2 id="combo-modal-product-name"></h2><button class="modal-close-btn" onclick="fecharModal()">×</button></div><div id="combo-status"></div><div class="modal-body" id="combo-modal-items-list"></div><div class="modal-footer"><button id="add-combo-button" class="add-button" onclick="adicionarComboAoCarrinho()">Adicionar Combo ao Pedido</button></div></div></div>
+    <div class="modal-backdrop" id="variations-modal"><div class="modal"><div class="modal-header"><h2 id="modal-product-name"></h2><button class="modal-close-btn" onclick="fecharModal()">×</button></div><div class="modal-body" id="modal-variations-list"></div><div class="modal-footer"><button id="add-variations-btn" class="add-button" onclick="adicionarVariacoesAoCarrinho(this)">Adicionar ao Pedido</button></div></div></div>
+    <div class="modal-backdrop" id="combo-builder-modal"><div class="modal"><div class="modal-header"><h2 id="combo-modal-product-name"></h2><button class="modal-close-btn" onclick="fecharModal()">×</button></div><div id="combo-status"></div><div class="modal-body" id="combo-modal-items-list"></div><div class="modal-footer"><button id="add-combo-button" class="add-button" onclick="adicionarComboAoCarrinho(this)">Adicionar Combo ao Pedido</button></div></div></div>
     <a href="#carrinho-secao" id="floating-cart-btn" class="floating-cart-btn"><svg class="cart-icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2zM7.17 14.75l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.37-.66-.11-1.48-.87-1.48H5.21l-.94-2H1v2h2l3.6 7.59-1.35 2.44C4.52 15.37 5.24 17 7 17h12v-2H7z"/></svg><span id="cart-item-count" class="cart-item-count">0</span></a>
 
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -176,7 +176,7 @@
         let selecaoModal = { produtoBaseId: null, variacoes: {} };
         let selecaoComboModal = { combo: null, itens: {}, totalSelecionado: 0, upcharge: 0 };
         let liveInventory = {};
-        const socket = io(backendUrl);
+        const socket = io(backendUrl, { transports: ['websocket'] });
         let lojaEstaAberta = false;
         let mensagemLojaFechada = 'A loja está fechada no momento.';
 
@@ -188,20 +188,14 @@
         const operatingHoursList = document.getElementById('operating-hours-list');
 
         // --- LÓGICA DE WEBSOCKET ---
-        socket.on('connect', () => {
-            console.log('Conectado ao servidor em tempo real!', socket.id);
-        });
-
+        socket.on('connect', () => console.log('Conectado ao servidor em tempo real!', socket.id));
         socket.on('estado_inicial_estoque', (inventarioInicial) => {
-            console.log('Recebido estado inicial do estoque.');
             liveInventory = inventarioInicial;
             carregarPagina();
         });
-
-        socket.on('estoque_atualizado', ({ slug, novaQuantidade }) => {
-            liveInventory[slug] = novaQuantidade;
+        socket.on('estoque_atualizado', (estoques) => {
+            Object.assign(liveInventory, estoques);
             renderizarCardapio();
-            // Também precisa re-renderizar o modal se estiver aberto
             if (document.getElementById('variations-modal').style.display === 'flex') {
                 abrirModalVariacoes(selecaoModal.produtoBaseId);
             }
@@ -209,25 +203,20 @@
                 abrirModalCombo(selecaoComboModal.combo.id);
             }
         });
-
-        socket.on('cardapio_alterado', () => {
-            console.log('Recebido aviso de alteração geral no cardápio. Recarregando...');
-            carregarPagina();
-        });
-
+        socket.on('cardapio_alterado', () => carregarPagina());
         socket.on('force_cart_reset', () => {
             if (carrinho.length > 0) {
                 alert('Seu carrinho expirou por inatividade e foi esvaziado para liberar os itens para outros clientes.');
                 carrinho = [];
                 atualizarDisplayCarrinho();
-                // Não precisa notificar o servidor de volta, pois foi ele quem mandou a ordem
             }
         });
-        
-        socket.on('reserva_carrinho_falha', () => {
-            alert('Um ou mais itens do seu carrinho ficaram indisponíveis. Por favor, revise seu pedido.');
-            // Força um recarregamento para sincronizar o estado
-            carregarPagina();
+        socket.on('carrinho_atualizado', (carrinhoDoServidor) => {
+            carrinho = carrinhoDoServidor;
+            atualizarDisplayCarrinho();
+        });
+        socket.on('falha_adicionar_item', (data) => {
+            alert(`Desculpe, não foi possível adicionar o item "${data.nome}". Estoque insuficiente. Restam apenas ${data.estoque_disponivel} unidades.`);
         });
 
         // --- LÓGICA PRINCIPAL ---
@@ -241,9 +230,7 @@
                 mensagemLojaFechada = dataStatus.mensagem;
                 storeStatusBanner.textContent = dataStatus.mensagem;
                 storeStatusBanner.className = lojaEstaAberta ? 'aberta' : 'fechada';
-                if(dataStatus.horarios) {
-                    formatarHorarios(dataStatus.horarios);
-                }
+                if(dataStatus.horarios) formatarHorarios(dataStatus.horarios);
 
                 const [produtosRes, combosRes] = await Promise.all([
                     fetch(`${backendUrl}/api/cardapio`),
@@ -260,13 +247,12 @@
                 productList.innerHTML = '<p>Não foi possível carregar o cardápio.</p>';
             }
         }
-
+        
         function formatarHorarios(horarios) {
             if (Object.keys(horarios).length === 0) {
                 operatingHoursList.innerHTML = '<p>Horários não definidos.</p>';
                 return;
             }
-
             const diasDaSemana = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
             const grupos = [];
             let grupoAtual = null;
@@ -274,16 +260,11 @@
             for (let i = 0; i <= 6; i++) {
                 const dia = i.toString();
                 const horario = horarios[dia];
-
                 if (!horario || !horario.ativo) {
-                    if (grupoAtual) {
-                        grupos.push(grupoAtual);
-                        grupoAtual = null;
-                    }
+                    if (grupoAtual) { grupos.push(grupoAtual); grupoAtual = null; }
                     grupos.push({ dias: [diasDaSemana[i]], horario: "Fechado" });
                     continue;
                 }
-
                 const horarioStr = `${horario.inicio} às ${horario.fim}`;
                 if (grupoAtual && grupoAtual.horario === horarioStr) {
                     grupoAtual.dias.push(diasDaSemana[i]);
@@ -317,11 +298,8 @@
                 alert(mensagemLojaFechada);
                 return;
             }
-            if (tipo === 'combo') {
-                abrirModalCombo(id);
-            } else {
-                abrirModalVariacoes(id);
-            }
+            if (tipo === 'combo') abrirModalCombo(id);
+            else abrirModalVariacoes(id);
         }
 
         function getEstoqueDisponivel(slug) {
@@ -330,10 +308,7 @@
 
         function renderizarCardapio() {
             productList.innerHTML = '';
-            const itensParaRenderizar = [
-                ...combosCache.map(c => ({...c, tipo: 'combo'})),
-                ...produtosCache.map(p => ({...p, tipo: 'produto'}))
-            ];
+            const itensParaRenderizar = [ ...combosCache.map(c => ({...c, tipo: 'combo'})), ...produtosCache.map(p => ({...p, tipo: 'produto'})) ];
             if (itensParaRenderizar.length === 0) {
                 productList.innerHTML = '<p>Nenhum produto disponível no momento. Volte mais tarde!</p>';
                 return;
@@ -343,7 +318,6 @@
                 let isEsgotado = false;
                 let buttonText = '';
                 let onclickAction = `handleProductClick('${item.tipo}', ${item.id})`;
-
                 if (item.tipo === 'combo') {
                     isEsgotado = verificarEstoqueCombo(item);
                     buttonText = isEsgotado ? 'Combo Indisponível' : 'Montar Combo';
@@ -381,7 +355,7 @@
                     <div class="variation-item ${isEsgotado ? 'esgotado' : ''}">
                         <div class="variation-item-info">
                             <span>${v.nome} (R$ ${Number(v.preco).toFixed(2).replace('.',',')})</span>
-                            <div class="stock-limit-msg" id="msg-v-${v.slug}">Limite em estoque atingido</div>
+                            <div class="stock-limit-msg" id="msg-v-${v.slug}">Limite em estoque: ${estoqueDisponivel}</div>
                         </div>
                         <div class="quantity-selector">
                             <button class="quantity-btn" onclick="mudarQuantidadeModal('${v.slug}', -1)">-</button>
@@ -391,6 +365,7 @@
                     </div>`;
                 selecaoModal.variacoes[v.slug] = { ...v, quantidade: 0 };
             });
+            document.getElementById('add-variations-btn').disabled = false;
             document.getElementById('variations-modal').style.display = 'flex';
         }
 
@@ -398,32 +373,35 @@
             const variacao = selecaoModal.variacoes[slug];
             if (!variacao) return;
             const estoqueDisponivel = getEstoqueDisponivel(slug);
-            if (delta > 0 && variacao.quantidade >= estoqueDisponivel) {
+            const novaQuantidade = variacao.quantidade + delta;
+            if (novaQuantidade > estoqueDisponivel) {
                 const msgEl = document.getElementById(`msg-v-${slug}`);
                 if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); }
                 return;
             }
-            if (variacao.quantidade + delta >= 0) {
-                variacao.quantidade += delta;
+            if (novaQuantidade >= 0) {
+                variacao.quantidade = novaQuantidade;
                 document.getElementById(`qty-v-${slug}`).innerText = variacao.quantidade;
             }
         }
 
-        function adicionarVariacoesAoCarrinho() {
+        function adicionarVariacoesAoCarrinho(button) {
+            button.disabled = true; // Previne cliques duplos
             const produtoBase = produtosCache.find(p => p.id === selecaoModal.produtoBaseId);
             for(const slug in selecaoModal.variacoes){
                 const variacao = selecaoModal.variacoes[slug];
                 if(variacao.quantidade > 0){
-                    const itemNoCarrinho = carrinho.find(item => !item.isCombo && item.slug === slug);
-                    if(itemNoCarrinho){
-                        itemNoCarrinho.quantidade += variacao.quantidade;
-                    } else {
-                        carrinho.push({ id: `prod-${variacao.id}`, slug: variacao.slug, nome: `${produtoBase.nome} (${variacao.nome})`, preco: variacao.preco, quantidade: variacao.quantidade, isCombo: false });
-                    }
+                    const item = {
+                        id: `prod-${variacao.id}`,
+                        slug: variacao.slug,
+                        nome: `${produtoBase.nome} (${variacao.nome})`,
+                        preco: variacao.preco,
+                        quantidade: variacao.quantidade,
+                        isCombo: false
+                    };
+                    socket.emit('adicionar_item_carrinho', item);
                 }
             }
-            atualizarDisplayCarrinho();
-            atualizarCarrinhoNoServidor();
             fecharModal();
         }
 
@@ -449,6 +427,7 @@
                 const eProdutoEspecificoComRegra = combo.regras.some(r => r.produto_base_id_alvo === p.id);
                 return (regraSetorGeral || eProdutoEspecificoComRegra) ? p.variacoes.map(v => ({...v, produtoBase: p})) : [];
             }).filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
+            
             itensElegiveis.forEach(item => {
                 const regraEspecifica = combo.regras.find(r => r.produto_base_id_alvo === item.produtoBase.id);
                 const upcharge = regraEspecifica ? regraEspecifica.upcharge : 0;
@@ -461,7 +440,7 @@
                         <div class="combo-item-info">
                             <div class="item-name">${item.produtoBase.nome} (${item.nome})</div>
                             ${upchargeText}
-                            <div class="stock-limit-msg" id="msg-c-${item.slug}">Limite em estoque atingido</div>
+                            <div class="stock-limit-msg" id="msg-c-${item.slug}">Limite em estoque: ${estoqueDisponivel}</div>
                         </div>
                         <div class="quantity-selector">
                             <button class="quantity-btn" onclick="mudarQuantidadeCombo('${item.slug}', -1)">-</button>
@@ -471,19 +450,22 @@
                     </div>`;
             });
             atualizarStatusModalCombo();
+            document.getElementById('add-combo-button').disabled = false;
             document.getElementById('combo-builder-modal').style.display = 'flex';
         }
 
         function mudarQuantidadeCombo(slug, delta) {
             const item = selecaoComboModal.itens[slug];
             const novoTotal = selecaoComboModal.totalSelecionado + delta;
-            if (delta > 0 && item.quantidade >= item.estoqueDisponivel) {
+            const novaQuantidadeItem = item.quantidade + delta;
+
+            if (delta > 0 && novaQuantidadeItem > item.estoqueDisponivel) {
                 const msgEl = document.getElementById(`msg-c-${slug}`);
                 if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); }
                 return;
             }
-            if (item.quantidade + delta >= 0 && novoTotal <= selecaoComboModal.combo.quantidade_itens_obrigatoria) {
-                item.quantidade += delta;
+            if (novaQuantidadeItem >= 0 && novoTotal <= selecaoComboModal.combo.quantidade_itens_obrigatoria) {
+                item.quantidade = novaQuantidadeItem;
                 document.getElementById(`combo-qty-${slug}`).innerText = item.quantidade;
                 atualizarStatusModalCombo();
             }
@@ -507,7 +489,8 @@
             statusEl.style.color = totalSelecionado === totalObrigatorio ? 'var(--cor-sucesso)' : 'var(--cor-principal)';
         }
 
-        function adicionarComboAoCarrinho() {
+        function adicionarComboAoCarrinho(button) {
+            button.disabled = true; // Previne cliques duplos
             const { combo, itens, upcharge } = selecaoComboModal;
             const precoFinal = combo.preco_base + upcharge;
             let detalhes = [];
@@ -518,9 +501,21 @@
                     subItens.push({ slug: slug, quantidade: itens[slug].quantidade });
                 }
             }
-            carrinho.push({ id: `combo-${combo.id}-${Date.now()}`, nome: combo.nome, preco: precoFinal, quantidade: 1, detalhes: detalhes.join(', '), isCombo: true, subItens: subItens });
-            atualizarDisplayCarrinho();
-            atualizarCarrinhoNoServidor();
+            const comboItem = { 
+                id: `combo-${combo.id}-${Date.now()}`, 
+                nome: combo.nome, 
+                preco: precoFinal, 
+                quantidade: 1, 
+                detalhes: detalhes.join(', '), 
+                isCombo: true, 
+                subItens: subItens
+            };
+            
+            // Em vez de adicionar localmente, pedimos ao servidor
+            subItens.forEach(subItem => {
+                socket.emit('adicionar_item_carrinho', { ...subItem, id: `sub-${subItem.slug}-${Date.now()}` }); // Envia sub-itens individualmente
+            });
+            
             fecharModal();
         }
 
@@ -546,14 +541,12 @@
                     const li = document.createElement('li');
                     li.className = 'cart-item';
                     const detalhesHtml = item.detalhes ? `<div class="item-details">${item.detalhes}</div>` : '';
-                    const qtdeControlsHtml = item.isCombo ? '' : `<button class="quantity-btn" onclick="mudarQuantidadeCarrinho('${item.id}', -1)">-</button><span class="quantity-value">${item.quantidade}</span><button class="quantity-btn" onclick="mudarQuantidadeCarrinho('${item.id}', 1)">+</button>`;
-                    li.innerHTML = `<div class="cart-item-info"><span class="item-name">${item.quantidade}x ${item.nome}</span>${detalhesHtml}<span class="item-price">R$ ${Number(item.preco).toFixed(2).replace('.', ',')}</span></div><div class="cart-item-controls">${qtdeControlsHtml}<button class="remove-btn" onclick="removerItemDoCarrinho('${item.id}')">×</button></div>`;
+                    const qtdeControlsHtml = item.isCombo ? '' : `<button class="remove-btn" onclick="removerItemDoCarrinho('${item.id}')">×</button>`;
+                    li.innerHTML = `<div class="cart-item-info"><span class="item-name">${item.quantidade}x ${item.nome}</span>${detalhesHtml}<span class="item-price">R$ ${Number(item.preco).toFixed(2).replace('.', ',')}</span></div><div class="cart-item-controls">${qtdeControlsHtml}</div>`;
                     cartItems.appendChild(li);
                     subtotal += item.preco * item.quantidade;
+                    totalItensNoCarrinho += item.quantidade;
                 });
-                totalItensNoCarrinho = carrinho.reduce((acc, item) => {
-                    return acc + (item.isCombo ? item.subItens.reduce((s, si) => s + si.quantidade, 0) : item.quantidade);
-                }, 0);
             }
             cartItemCount.innerText = totalItensNoCarrinho;
             const tipoRecebimento = document.querySelector('input[name="tipo-recebimento"]:checked').value;
@@ -572,29 +565,9 @@
             subtotalEl.innerText = `R$ ${subtotal.toFixed(2).replace('.', ',')}`;
             grandTotalEl.innerText = `R$ ${totalFinal.toFixed(2).replace('.', ',')}`;
         }
-
-        function mudarQuantidadeCarrinho(itemId, delta) {
-            const itemNoCarrinho = carrinho.find(item => item.id === itemId);
-            if (!itemNoCarrinho || itemNoCarrinho.isCombo) return;
-            const estoqueDisponivel = getEstoqueDisponivel(itemNoCarrinho.slug);
-            if (delta > 0 && itemNoCarrinho.quantidade + delta > estoqueDisponivel) {
-                alert("Não há mais estoque disponível para este item.");
-                return;
-            }
-            itemNoCarrinho.quantidade += delta;
-            if (itemNoCarrinho.quantidade <= 0) {
-                removerItemDoCarrinho(itemId, true);
-            }
-            atualizarDisplayCarrinho();
-            atualizarCarrinhoNoServidor();
-        }
-
-        function removerItemDoCarrinho(itemId, fromMudarQuantidade = false) {
-            carrinho = carrinho.filter(item => item.id !== itemId);
-            atualizarDisplayCarrinho();
-            if (!fromMudarQuantidade) {
-                atualizarCarrinhoNoServidor();
-            }
+        
+        function removerItemDoCarrinho(itemId) {
+            socket.emit('remover_item_carrinho', itemId);
         }
 
         async function finalizarPedidoWhatsApp(event) {
@@ -608,8 +581,7 @@
                 return;
             }
             
-            // Libera os itens do carrinho no servidor ANTES de ir para o WhatsApp
-            socket.emit('carrinho_alterado', []);
+            socket.emit('limpar_carrinho');
 
             let subtotal = 0;
             let mensagem = 'Olá! Gostaria de fazer o seguinte pedido pelo cardápio online:\n\n';
@@ -638,7 +610,6 @@
             mensagem += `*TOTAL: R$ ${totalFinal.toFixed(2).replace('.', ',')}*`;
             const link = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensagem)}`;
             
-            // Limpa o carrinho local e redireciona
             carrinho = [];
             atualizarDisplayCarrinho();
             window.open(link, '_blank');
