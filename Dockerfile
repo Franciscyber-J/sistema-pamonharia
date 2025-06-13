@@ -1,11 +1,12 @@
-# Usa uma imagem oficial do Node.js como base.
+# Usa uma imagem oficial do Node.js como base, que é enxuta e otimizada.
 FROM node:18-slim
 
-# Instala as dependências de sistema necessárias para o Puppeteer (usado pelo whatsapp-web.js) rodar corretamente.
-# ADICIONADO libgbm1 à lista.
+# Instala as dependências de sistema necessárias para o Puppeteer rodar corretamente.
+# Esta lista é mais completa para garantir compatibilidade em ambientes de nuvem.
 RUN apt-get update && apt-get install -yq \
     gconf-service \
     libasound2 \
+    libatk-bridge2.0-0 \
     libatk1.0-0 \
     libc6 \
     libcairo2 \
@@ -44,6 +45,7 @@ RUN apt-get update && apt-get install -yq \
     wget \
     libdrm2 \
     libgbm1 \
+    libxshmfence1 \
     --no-install-recommends
 
 # Define o diretório de trabalho dentro do container
@@ -53,6 +55,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Instala as dependências do projeto
+# O --no-optional é importante para ambientes de produção.
 RUN npm install --production=false --no-optional
 
 # Copia o resto do código do seu projeto para dentro do container
