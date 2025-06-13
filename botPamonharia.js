@@ -21,9 +21,7 @@ const CONFIG = {
     ATENDENTE_CONTATO: '5562992819889'
 };
 
-// --- CONFIGURAÇÃO DO CLIENTE WHATSAPP (SIMPLIFICADA) ---
-// A seção 'webVersionCache' foi removida para usar o padrão da biblioteca,
-// eliminando um possível ponto de falha de rede durante a inicialização.
+// --- CONFIGURAÇÃO DO CLIENTE WHATSAPP (VERSÃO FINAL E OTIMIZADA) ---
 const client = new Client({
     authStrategy: new LocalAuth({
         clientId: "bot-pamonharia-concierge",
@@ -31,6 +29,8 @@ const client = new Client({
     }),
     puppeteer: {
         headless: true,
+        // ADICIONADO: Aponta para o Chrome que instalamos no Dockerfile
+        executablePath: '/usr/bin/google-chrome-stable',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
