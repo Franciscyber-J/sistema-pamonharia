@@ -3,7 +3,7 @@
 // =================================================================================================
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
+const cors =require('cors');
 const db = require('./database.js');
 const multer = require('multer');
 const path = require('path');
@@ -90,17 +90,15 @@ const apenasAdmin = (req, res, next) => {
 // --- ROTAS DA API ---
 // =================================================================================================
 
-// ROTA DE STATUS DA LOJA - ATUALIZADA PARA ENVIAR HORÁRIOS
 app.get('/api/loja/status', async (req, res) => {
     try {
         const { rows } = await db.query('SELECT aberta_manualmente, fechada_manualmente, horarios_json FROM configuracao_loja WHERE id = 1');
         const config = rows[0];
         
-        // Objeto de resposta base
         const response = {
             status: 'fechado',
             mensagem: 'Configuração da loja não encontrada.',
-            horarios: JSON.parse(config?.horarios_json || '{}') // Envia os horários
+            horarios: config && config.horarios_json ? JSON.parse(config.horarios_json) : {}
         };
 
         if (!config) {
@@ -141,9 +139,7 @@ app.get('/api/loja/status', async (req, res) => {
         } else {
             response.mensagem = `Nosso horário hoje é das ${horarioDeHoje.inicio} às ${horarioDeHoje.fim}.`;
         }
-
         res.json(response);
-
     } catch (err) {
         console.error("ERRO AO VERIFICAR STATUS:", err);
         res.status(500).json({ error: 'Erro ao verificar status da loja.' });
@@ -159,7 +155,6 @@ app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
     }
 });
 
-// ROTA DE ATUALIZAÇÃO GERAL (SOMENTE ADMIN) ATUALIZADA
 app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { aberta_manualmente, fechada_manualmente, horarios_json } = req.body;
@@ -174,10 +169,8 @@ app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (r
     }
 });
 
-// NOVA ROTA PARA OPERADORES E ADMINS ATUALIZAREM O STATUS MANUAL
 app.post('/api/dashboard/loja/status-manual', protegerRota, async (req, res) => {
     try {
-        // Esta rota não usa 'apenasAdmin', permitindo que operadores a acessem
         const { aberta_manualmente, fechada_manualmente } = req.body;
         await db.query(
             'UPDATE configuracao_loja SET aberta_manualmente = $1, fechada_manualmente = $2 WHERE id = 1',
@@ -190,8 +183,6 @@ app.post('/api/dashboard/loja/status-manual', protegerRota, async (req, res) => 
     }
 });
 
-
-// --- OUTRAS ROTAS DA API ---
 const getCardapioCompleto = async () => {
     const sql = `
         SELECT 
@@ -435,16 +426,26 @@ app.get('/api/combos', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Erro ao buscar combos." }); }
 });
 
+// ROTA DE COMBOS DO DASHBOARD (COM SQL CORRIGIDO)
 app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
-    try {
-        const sql = `
-            SELECT c.*, COALESCE((SELECT json_agg(rc.*) FROM regras_combo rc WHERE rc.combo_id = c.id), '[]'::json) as regras
-            FROM combos c ORDER BY c.id;
-        `;
-        const { rows } = await db.query(sql);
-        res.json({ data: rows });
-    } catch (err) { res.status(500).json({ error: "Erro ao buscar combos para o dashboard." }); }
+    try {
+        const sql = `
+            SELECT
+                c.*,
+                COALESCE(json_agg(rc.*) FILTER (WHERE rc.id IS NOT NULL), '[]'::json) as regras
+            FROM combos c
+            LEFT JOIN regras_combo rc ON rc.combo_id = c.id
+            GROUP BY c.id
+            ORDER BY c.id;
+        `;
+        const { rows } = await db.query(sql);
+        res.json({ data: rows });
+    } catch (err) {
+        console.error("ERRO NO ENDPOINT DE COMBOS:", err);
+        res.status(500).json({ error: "Erro ao buscar combos para o dashboard." });
+    }
 });
+
 
 app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
