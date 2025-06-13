@@ -4,7 +4,7 @@
 require('dotenv').config();
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const axios = require('axios');
-const qrcode = require('qrcode-terminal');
+const qrcode = require('qrcode'); // ATUALIZADO: Usando a biblioteca 'qrcode'
 
 // =================================================================================================
 // --- CONFIGURAÇÕES ---
@@ -21,7 +21,6 @@ const CONFIG = {
     ATENDENTE_CONTATO: '5562992819889'
 };
 
-// --- CONFIGURAÇÃO DO CLIENTE WHATSAPP (VERSÃO FINAL E OTIMIZADA) ---
 const client = new Client({
     authStrategy: new LocalAuth({
         clientId: "bot-pamonharia-concierge",
@@ -29,8 +28,6 @@ const client = new Client({
     }),
     puppeteer: {
         headless: true,
-        // ADICIONADO: Aponta para o Chrome que instalamos no Dockerfile
-        executablePath: '/usr/bin/google-chrome-stable',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -50,15 +47,27 @@ const chatStates = new Map();
 // --- LÓGICA PRINCIPAL DO BOT ---
 // =================================================================================================
 
+// ATUALIZADO: Lógica para exibir o QR Code como texto no log
 client.on('qr', qr => {
-    qrcode.generate(qr, { small: true });
-    log('INFO', 'QRCode', 'QR Code gerado. Por favor, escaneie.');
+    log('INFO', 'QRCode', 'QR Code recebido. Convertendo para texto para exibição no log...');
+    qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
+        if (err) {
+            log('ERROR', 'QRCode', 'Não foi possível converter o QR Code.');
+            console.error(err);
+            return;
+        }
+        console.log('--- INÍCIO DO QR CODE ---');
+        console.log(url);
+        console.log('--- FIM DO QR CODE ---');
+        log('INFO', 'QRCode', 'Escaneie o código acima com o seu WhatsApp.');
+    });
 });
 
 client.on('ready', () => {
     log('SUCCESS', 'Client', 'Bot Concierge da Pamonharia está online!');
 });
 
+// ... (O restante do arquivo permanece exatamente o mesmo)
 client.on('message_create', async msg => {
     const chat = await msg.getChat();
     if (chat.isGroup || msg.fromMe) {
@@ -130,3 +139,4 @@ client.initialize().catch(err => {
     console.error('[ERRO FATAL NA INICIALIZAÇÃO]', err);
     log("FATAL", "Initialize", `Falha ao inicializar o cliente. Verifique o erro detalhado acima.`);
 });
+
