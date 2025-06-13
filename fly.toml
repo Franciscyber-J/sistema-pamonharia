@@ -1,12 +1,16 @@
+# fly.toml (versão final para uso com Dockerfile)
+
 app = "pamonharia-saborosa-bot"
 primary_region = "gru"
 
-[build]
-  builder = "heroku/builder:22"
-
-[processes]
-  app = "npm run start:bot"
+# A seção [build] não é mais necessária, pois usaremos o Dockerfile.
 
 [mounts]
   source = "wwebjs_auth_data"
   destination = "/data/wwebjs_auth"
+
+# A seção [http_service] pode ser removida, pois nosso bot não é um servidor web.
+# Manteremos a seção [processes] para garantir que o comando certo seja executado.
+
+[processes]
+  app = "npm run start:bot"
