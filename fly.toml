@@ -1,10 +1,9 @@
-# fly.toml (versão final com ajuste de memória)
+# fly.toml (Versão FINAL e CORRIGIDA para usar o Dockerfile)
 
 app = "pamonharia-saborosa-bot"
 primary_region = "gru"
 
-[build]
-  builder = "heroku/builder:22"
+# A seção [build] foi REMOVIDA para forçar o uso do nosso Dockerfile.
 
 [processes]
   app = "npm run start:bot"
