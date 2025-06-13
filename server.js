@@ -100,18 +100,28 @@ const apenasAdmin = (req, res, next) => {
 // --- GERENCIAMENTO DE ESTOQUE E TIMEOUT EM TEMPO REAL ---
 // =================================================================================================
 let liveInventory = {};
+let productDetails = {};
 const userCarts = new Map();
 const CART_TIMEOUT_MS = 15 * 60 * 1000;
 
 async function initializeInventory() {
     try {
-        console.log('Inicializando o inventário em tempo real...');
-        const { rows } = await db.query('SELECT slug, quantidade_estoque FROM variacoes');
+        console.log('Inicializando o inventário e detalhes de produtos...');
+        const { rows } = await db.query(`
+            SELECT v.slug, v.quantidade_estoque, v.preco, pb.nome as produto_base_nome, v.nome as variacao_nome
+            FROM variacoes v
+            JOIN produtos_base pb ON v.produto_base_id = pb.id
+        `);
         liveInventory = {};
+        productDetails = {};
         rows.forEach(item => {
             liveInventory[item.slug] = item.quantidade_estoque;
+            productDetails[item.slug] = {
+                nome: `${item.produto_base_nome} ${item.variacao_nome}`.trim(),
+                preco: item.preco
+            };
         });
-        console.log('Inventário inicializado com sucesso.');
+        console.log('Inventário e detalhes inicializados com sucesso.');
     } catch (error) {
         console.error('ERRO CRÍTICO ao inicializar o inventário:', error);
     }
@@ -134,26 +144,39 @@ io.on('connection', (socket) => {
 
     socket.emit('estado_inicial_estoque', liveInventory);
 
-    socket.on('adicionar_item_carrinho', (item) => {
+    socket.on('adicionar_item_carrinho', (itemRequest) => {
         const userSession = userCarts.get(socket.id);
         if (!userSession) return;
         
         userSession.lastActivity = Date.now();
+        const { slug, quantidade, isCombo, comboDetails } = itemRequest;
 
-        if (liveInventory[item.slug] >= item.quantidade) {
-            updateLiveInventoryAndBroadcast(item.slug, -item.quantidade);
-
-            const existingItem = userSession.cart.find(i => i.id === item.id);
-            if(existingItem) {
-                existingItem.quantidade += item.quantidade;
-            } else {
-                userSession.cart.push(item);
-            }
-            
-            socket.emit('carrinho_atualizado', userSession.cart);
+        if (isCombo) {
+            userSession.cart.push({ ...comboDetails, isCombo: true, id: `combo-${Date.now()}` });
         } else {
-            socket.emit('falha_adicionar_item', { nome: item.nome, estoque_disponivel: liveInventory[item.slug] });
+            if (liveInventory[slug] >= quantidade) {
+                updateLiveInventoryAndBroadcast(slug, -quantidade);
+                
+                const details = productDetails[slug];
+                const existingItem = userSession.cart.find(i => i.slug === slug && !i.isCombo);
+
+                if (existingItem) {
+                    existingItem.quantidade += quantidade;
+                } else {
+                    userSession.cart.push({
+                        id: `prod-${slug}`,
+                        slug: slug,
+                        nome: details.nome,
+                        preco: details.preco,
+                        quantidade: quantidade,
+                        isCombo: false
+                    });
+                }
+            } else {
+                socket.emit('falha_adicionar_item', { nome: productDetails[slug]?.nome || 'Item desconhecido', estoque_disponivel: liveInventory[slug] });
+            }
         }
+        socket.emit('carrinho_atualizado', userSession.cart);
     });
 
     socket.on('remover_item_carrinho', (itemId) => {
@@ -165,7 +188,9 @@ io.on('connection', (socket) => {
 
         if (itemIndex > -1) {
             const item = userSession.cart[itemIndex];
-            updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
+            if (!item.isCombo && item.slug) {
+                updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
+            }
             userSession.cart.splice(itemIndex, 1);
             socket.emit('carrinho_atualizado', userSession.cart);
         }
@@ -175,7 +200,9 @@ io.on('connection', (socket) => {
         const userSession = userCarts.get(socket.id);
         if (userSession && userSession.cart) {
             for (const item of userSession.cart) {
-                updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
+                if (!item.isCombo && item.slug) {
+                     updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
+                }
             }
             userSession.cart = [];
             socket.emit('carrinho_atualizado', userSession.cart);
@@ -187,7 +214,9 @@ io.on('connection', (socket) => {
         const userSession = userCarts.get(socket.id);
         if (userSession && userSession.cart) {
             for (const item of userSession.cart) {
-                updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
+                 if (!item.isCombo && item.slug) {
+                    updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
+                }
             }
             userCarts.delete(socket.id);
         }
@@ -202,7 +231,9 @@ setInterval(() => {
             const cart = session.cart;
             if (cart && cart.length > 0) {
                 for (const item of cart) {
-                    updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
+                    if (!item.isCombo && item.slug) {
+                        updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
+                    }
                 }
             }
             userCarts.delete(socketId);
@@ -433,17 +464,39 @@ app.delete('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
         res.json({ message: "Setor excluído." });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+app.post('/variacao/estoque', protegerRota, async (req, res) => {
+    try {
+        const { id, quantidade } = req.body;
+        const { rows } = await db.query(`UPDATE variacoes SET quantidade_estoque = $1 WHERE id = $2 RETURNING slug`, [quantidade, id]);
+        
+        await initializeInventory(); // Recarrega todo o inventário para garantir consistência
+        io.emit('estado_inicial_estoque', liveInventory); // Emite o novo estado completo para todos os clientes
+        
+        res.json({ message: `Estoque da variação atualizado.` });
+    } catch (err) { res.status(500).json({ "error": err.message }); }
+});
 app.post('/variacoes', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { produto_base_id, nome, slug, preco } = req.body;
         await db.query(`INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, 0) RETURNING id`, [produto_base_id, nome, slug, preco]);
+        await initializeInventory();
         io.emit('cardapio_alterado');
         res.status(201).send();
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.put('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        const { nome, slug, preco } = req.body;
+        await db.query(`UPDATE variacoes SET nome = $1, slug = $2, preco = $3 WHERE id = $4`, [nome, slug, preco, req.params.id]);
+        await initializeInventory();
+        io.emit('cardapio_alterado');
+        res.json({ message: 'Variação atualizada!' });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.delete('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query(`DELETE FROM variacoes WHERE id = $1`, [req.params.id]);
+        await initializeInventory();
         io.emit('cardapio_alterado');
         res.json({ message: 'Variação excluída.' });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -455,9 +508,10 @@ app.post('/variacoes/:id/duplicar', protegerRota, apenasAdmin, async (req, res) 
         if (!variacao) return res.status(404).json({ error: "Variação não encontrada." });
         const novoNome = `${variacao.nome} (cópia)`;
         const novoSlug = `${variacao.slug}-copia-${Date.now()}`;
-        const { rows: newRows } = await db.query('INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, $5) RETURNING id', [variacao.produto_base_id, novoNome, novoSlug, variacao.preco, variacao.quantidade_estoque]);
+        await db.query('INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque) VALUES ($1, $2, $3, $4, $5) RETURNING id', [variacao.produto_base_id, novoNome, novoSlug, variacao.preco, variacao.quantidade_estoque]);
+        await initializeInventory();
         io.emit('cardapio_alterado');
-        res.json({ message: 'Variação duplicada com sucesso!', newId: newRows[0].id });
+        res.json({ message: 'Variação duplicada com sucesso!'});
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.post('/dashboard/produtos/reordenar', protegerRota, apenasAdmin, async (req, res) => {
@@ -488,22 +542,95 @@ app.post('/pedido', protegerRota, async (req, res) => {
     const client = await db.pool.connect();
     try {
         await client.query('BEGIN');
+        const updates = [];
         for (const item of itens) {
             const updateQuery = "UPDATE variacoes SET quantidade_estoque = quantidade_estoque - $1 WHERE id = $2 AND quantidade_estoque >= $1 RETURNING slug, quantidade_estoque";
             const result = await client.query(updateQuery, [item.qtd, item.id]);
             if (result.rowCount === 0) {
                 throw new Error(`Estoque insuficiente para o item ID ${item.id}.`);
             }
-            const { slug, quantidade_estoque } = result.rows[0];
-            liveInventory[slug] = quantidade_estoque;
-            io.emit('estoque_atualizado', { [slug]: liveInventory[slug] });
+            updates.push(result.rows[0]);
         }
         await client.query('COMMIT');
+        
+        // Emite atualizações de estoque após o commit
+        const stockUpdates = {};
+        updates.forEach(upd => {
+            liveInventory[upd.slug] = upd.quantidade_estoque;
+            stockUpdates[upd.slug] = upd.quantidade_estoque;
+        });
+        io.emit('estoque_atualizado', stockUpdates);
+        
         res.json({ message: "Processo de baixa de estoque concluído com sucesso." });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error("Erro na transação de pedido, rollback executado:", err);
         res.status(500).json({ error: "Erro interno ao processar baixa de estoque. A operação foi cancelada." });
+    } finally {
+        client.release();
+    }
+});
+app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
+    if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
+    const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
+    if (!req.file) return res.status(400).json({ error: "A imagem para o combo é obrigatória." });
+    const imagem_url = req.file.path;
+    const client = await db.pool.connect();
+    try {
+        await client.query('BEGIN');
+        const comboSql = `INSERT INTO combos (nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, imagem_url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id;`;
+        const comboResult = await client.query(comboSql, [nome, descricao, parseFloat(preco_base), parseInt(quantidade_itens_obrigatoria), ativo, imagem_url]);
+        const comboId = comboResult.rows[0].id;
+        if (regras && regras.length > 0) {
+            for (const regra of regras) {
+                const regraSql = `INSERT INTO regras_combo (combo_id, setor_id_alvo, produto_base_id_alvo, upcharge) VALUES ($1, $2, $3, $4);`;
+                await client.query(regraSql, [comboId, regra.setor_id_alvo || null, regra.produto_base_id_alvo || null, parseFloat(regra.upcharge) || 0]);
+            }
+        }
+        await client.query('COMMIT');
+        io.emit('cardapio_alterado');
+        res.status(201).json({ id: comboId, message: 'Combo criado com sucesso!' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("Erro ao criar combo:", err);
+        res.status(500).json({ error: "Falha ao criar o combo." });
+    } finally {
+        client.release();
+    }
+});
+app.put('/api/dashboard/combos/:id', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
+    const { id } = req.params;
+    if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
+    const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
+    let imagem_url;
+    if (req.file) { imagem_url = req.file.path; }
+    const client = await db.pool.connect();
+    try {
+        await client.query('BEGIN');
+        let comboSql = 'UPDATE combos SET nome = $1, descricao = $2, preco_base = $3, quantidade_itens_obrigatoria = $4, ativo = $5';
+        const params = [nome, descricao, parseFloat(preco_base), parseInt(quantidade_itens_obrigatoria), ativo];
+        let paramCount = 6;
+        if (imagem_url) {
+            comboSql += `, imagem_url = $${paramCount++}`;
+            params.push(imagem_url);
+        }
+        comboSql += ` WHERE id = $${paramCount}`;
+        params.push(id);
+        await client.query(comboSql, params);
+        await client.query('DELETE FROM regras_combo WHERE combo_id = $1', [id]);
+        if (regras && regras.length > 0) {
+            for (const regra of regras) {
+                const regraSql = `INSERT INTO regras_combo (combo_id, setor_id_alvo, produto_base_id_alvo, upcharge) VALUES ($1, $2, $3, $4);`;
+                await client.query(regraSql, [id, regra.setor_id_alvo || null, regra.produto_base_id_alvo || null, parseFloat(regra.upcharge) || 0]);
+            }
+        }
+        await client.query('COMMIT');
+        io.emit('cardapio_alterado');
+        res.json({ message: 'Combo atualizado com sucesso!' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(`Erro ao atualizar combo ${id}:`, err);
+        res.status(500).json({ error: "Falha ao atualizar o combo." });
     } finally {
         client.release();
     }
