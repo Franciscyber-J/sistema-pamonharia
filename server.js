@@ -224,12 +224,12 @@ io.on('connection', (socket) => {
             const item = userSession.cart[itemIndex];
             if (item.isCombo) {
                 item.subItens.forEach(subItem => {
-                    if (productDetails[subItem.slug].controlar_estoque) {
+                    if (productDetails[subItem.slug] && productDetails[subItem.slug].controlar_estoque) {
                         updateLiveInventoryAndBroadcast(subItem.slug, subItem.quantidade);
                     }
                 });
             } else {
-                if (productDetails[item.slug].controlar_estoque) {
+                if (productDetails[item.slug] && productDetails[item.slug].controlar_estoque) {
                     updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
                 }
             }
@@ -547,8 +547,9 @@ app.post('/variacao/estoque', protegerRota, async (req, res) => {
 
 app.post('/variacoes', protegerRota, apenasAdmin, async (req, res) => {
     try {
-        const { produto_base_id, nome, slug, preco, controlar_estoque } = req.body;
-        await db.query(`INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque, controlar_estoque) VALUES ($1, $2, $3, $4, 0, $5) RETURNING id`, [produto_base_id, nome, slug, preco, controlar_estoque]);
+        const { produto_base_id, nome, slug, preco } = req.body;
+        // Por padrão, novas variações controlam o estoque
+        await db.query(`INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque, controlar_estoque) VALUES ($1, $2, $3, $4, 0, true) RETURNING id`, [produto_base_id, nome, slug, preco]);
         await initializeInventory();
         io.emit('cardapio_alterado');
         res.status(201).send();
@@ -557,13 +558,28 @@ app.post('/variacoes', protegerRota, apenasAdmin, async (req, res) => {
 
 app.put('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
-        const { nome, slug, preco, controlar_estoque } = req.body;
-        await db.query(`UPDATE variacoes SET nome = $1, slug = $2, preco = $3, controlar_estoque = $4 WHERE id = $5`, [nome, slug, preco, controlar_estoque, req.params.id]);
+        const { nome, slug, preco } = req.body;
+        await db.query(`UPDATE variacoes SET nome = $1, slug = $2, preco = $3 WHERE id = $4`, [nome, slug, preco, req.params.id]);
         await initializeInventory();
         io.emit('cardapio_alterado');
         res.json({ message: 'Variação atualizada!' });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// NOVA ROTA para o toggle de controle de estoque
+app.put('/api/dashboard/variacoes/:id/toggle-stock', protegerRota, apenasAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { controlar_estoque } = req.body;
+        await db.query(`UPDATE variacoes SET controlar_estoque = $1 WHERE id = $2`, [controlar_estoque, id]);
+        await initializeInventory();
+        io.emit('cardapio_alterado'); // Emite um evento geral para todos os clientes atualizarem
+        res.json({ message: 'Controle de estoque atualizado.' });
+    } catch(err) {
+        res.status(500).json({ error: 'Falha ao atualizar controle de estoque.' });
+    }
+});
+
 
 app.delete('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
@@ -626,7 +642,7 @@ app.post('/pedido', async (req, res) => {
 
             const { quantidade_estoque, controlar_estoque } = stockCheck.rows[0];
             if (controlar_estoque && quantidade_estoque < item.quantidade) {
-                const details = productDetails[item.slug] || { nome: `Item ID ${item.id}` };
+                const details = productDetails[item.slug] || { nome: `Item com ID ${item.id}` };
                 itensComProblema.push(details.nome);
             }
         }

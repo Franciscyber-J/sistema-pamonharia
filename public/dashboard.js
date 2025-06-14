@@ -26,23 +26,16 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Dashboard conectado ao servidor em tempo real!');
         });
 
-        socket.on('estado_inicial_estoque', (estoqueInicial) => {
-            console.log('Recebido estado inicial do estoque. Sincronizando UI...');
-            Object.keys(estoqueInicial).forEach(slug => {
-                const variacao = cache.produtos.flatMap(p => p.variacoes).find(v => v.slug === slug);
-                if (variacao) {
-                    variacao.quantidade_estoque = estoqueInicial[slug];
-                    const inputEstoque = document.getElementById(`estoque-v-${variacao.id}`);
-                    if (inputEstoque) {
-                        inputEstoque.value = estoqueInicial[slug];
-                    }
-                }
-            });
+        socket.on('estado_inicial_estoque', () => {
+            console.log('Recebida atualização de estoque completa. Recarregando dados...');
+            mostrarToast('Estoque sincronizado.', 'info');
+            carregarTudo();
         });
         
         socket.on('estoque_atualizado', (estoques) => {
             console.log('Recebida atualização de estoque em tempo real:', estoques);
-            mostrarToast('Estoque atualizado!', 'info');
+            let precisaRecarregarGeral = false;
+
             for (const slug in estoques) {
                 const variacao = cache.produtos.flatMap(p => p.variacoes).find(v => v.slug === slug);
                 if (variacao) {
@@ -50,8 +43,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     const inputEstoque = document.getElementById(`estoque-v-${variacao.id}`);
                     if (inputEstoque) {
                         inputEstoque.value = estoques[slug];
+                    } else {
+                        precisaRecarregarGeral = true;
                     }
+                } else {
+                     precisaRecarregarGeral = true;
                 }
+            }
+
+            if(precisaRecarregarGeral) {
+                carregarTudo();
+            } else {
+                 mostrarToast('Estoque atualizado na tela!', 'info');
             }
         });
 
@@ -107,6 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- LÓGICA DE CARREGAMENTO DE DADOS ---
     async function carregarTudo() {
         try {
             const acordeoesAbertos = new Set();
@@ -157,6 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- LÓGICA DE AUTENTICAÇÃO E SESSÃO ---
     async function handleLogin(event) {
         event.preventDefault();
         document.getElementById('login-error').textContent = '';
@@ -265,6 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return response;
     }
     
+    // --- LÓGICA DE RENDERIZAÇÃO ---
     function renderizarGerenciadorProdutos() {
         if(!gerenciadorProdutos) return;
         gerenciadorProdutos.innerHTML = ''; 
@@ -286,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="variacoes-container hidden" id="variacoes-pb-${pb.id}">
                     <table class="variacoes-table">
-                        <thead><tr><th>Variação</th><th>Preço</th><th>Estoque</th><th>Ações</th></tr></thead>
+                        <thead><tr><th>Variação</th><th>Preço</th><th data-admin-only>Controle de Estoque</th><th>Estoque</th><th>Ações</th></tr></thead>
                         <tbody>${renderizarLinhasVariacoes(pb)}</tbody>
                     </table>
                     <button class="add-btn" data-action="adicionar-variacao" data-id="${pb.id}" data-admin-only>+ Adicionar Nova Variação</button>
@@ -298,7 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderizarLinhasVariacoes(produtoBase) {
         if (!produtoBase.variacoes || produtoBase.variacoes.length === 0) {
-            return '<tr><td colspan="4" style="text-align:center; padding: 20px;">Nenhuma variação cadastrada.</td></tr>';
+            return '<tr><td colspan="5" style="text-align:center; padding: 20px;">Nenhuma variação cadastrada.</td></tr>';
         }
         return produtoBase.variacoes.map(v => {
             const inputEstoqueHTML = `
@@ -309,11 +315,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button class="save-btn btn-sm" data-action="salvar-estoque" data-id="${v.id}" ${!v.controlar_estoque ? 'disabled' : ''}>Salvar</button>
                 </div>
             `;
+            const toggleEstoqueHTML = `
+                <label class="switch">
+                    <input type="checkbox" data-action="toggle-stock-control" data-id="${v.id}" ${v.controlar_estoque ? 'checked' : ''}>
+                    <span class="slider"></span>
+                </label>
+            `;
+            
             return `
                 <tr class="${v.controlar_estoque && v.quantidade_estoque === 0 ? 'variacao-esgotada' : ''}">
                     <td>${v.nome}</td>
                     <td>R$ ${Number(v.preco).toFixed(2).replace('.',',')}</td>
-                    <td>${v.controlar_estoque ? inputEstoqueHTML : '<span>Sob Demanda</span>'}</td>
+                    <td data-admin-only>${toggleEstoqueHTML}</td>
+                    <td>${inputEstoqueHTML}</td>
                     <td class="actions-cell" data-admin-only>
                         <button class="actions-menu-btn" data-action="toggle-actions-menu" data-type="variacao" data-id="${v.id}" data-pb-id="${produtoBase.id}" data-nome="${v.nome}">⋮</button>
                     </td>
@@ -546,7 +560,6 @@ document.addEventListener('DOMContentLoaded', () => {
         form.reset();
         document.getElementById('v-id').value = '';
         document.getElementById('v-pb-id').value = produtoBaseId;
-        const checkboxEstoque = document.getElementById('v-controlar-estoque');
         
         if (id) {
             const pb = cache.produtos.find(p => p.id === produtoBaseId);
@@ -555,11 +568,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('v-id').value = variacao.id;
             document.getElementById('v-nome').value = variacao.nome;
             document.getElementById('v-preco').value = variacao.preco;
-            checkboxEstoque.checked = variacao.controlar_estoque;
         } else {
             const pb = cache.produtos.find(p => p.id === produtoBaseId);
             document.getElementById('form-v-title').innerText = `Adicionar Variação para: ${pb.nome}`;
-            checkboxEstoque.checked = true;
         }
         document.getElementById('modal-variacao').style.display = 'flex';
     }
@@ -622,11 +633,11 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault(); 
         const id = document.getElementById('v-id').value;
         const nomeVariacao = document.getElementById('v-nome').value;
+        // A lógica do checkbox será tratada por um evento separado
         const data = { 
             produto_base_id: document.getElementById('v-pb-id').value, 
             nome: nomeVariacao, 
             preco: document.getElementById('v-preco').value, 
-            controlar_estoque: document.getElementById('v-controlar-estoque').checked,
             slug: gerarSlug(nomeVariacao) + '-' + Date.now()
         };
         const method = id ? 'PUT' : 'POST'; 
@@ -713,11 +724,42 @@ document.addEventListener('DOMContentLoaded', () => {
         container.appendChild(lista);
     }
     
+    async function toggleStockControl(id, isChecked) {
+        try {
+            await fetchProtegido(`${backendUrl}/api/dashboard/variacoes/${id}/toggle-stock`, {
+                method: 'PUT',
+                body: JSON.stringify({ controlar_estoque: isChecked })
+            });
+            mostrarToast('Controle de estoque atualizado!', 'sucesso');
+            // A atualização visual será tratada pelo evento de socket para manter consistência
+        } catch (error) {
+            mostrarToast(`Erro: ${error.message}`, 'erro');
+            // Reverte o checkbox em caso de erro
+            const checkbox = document.querySelector(`input[data-action="toggle-stock-control"][data-id="${id}"]`);
+            if(checkbox) checkbox.checked = !isChecked;
+        }
+    }
+
     function handleAcoesProdutos(e) {
         const target = e.target;
         const button = target.closest('button');
         const header = target.closest('.produto-header');
-        const action = button ? button.dataset.action : (header && !target.closest('.actions-cell') ? 'toggle-variacoes' : null);
+        const action = button ? button.dataset.action : (header && !target.closest('.actions-cell') && !target.closest('.produto-header-toggle') ? 'toggle-variacoes' : null);
+
+        if (target.dataset.action === 'toggle-stock-control') {
+            toggleStockControl(target.dataset.id, target.checked);
+            return;
+        }
+        
+        if (target.matches('.produto-header-toggle')) {
+            const id = header.dataset.id;
+            const container = document.getElementById(`variacoes-pb-${id}`);
+            const toggleIcon = target;
+            container.classList.toggle('hidden');
+            toggleIcon.style.transform = container.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(90deg)';
+            return;
+        }
+        
         if (!action) return;
         if (action === 'toggle-actions-menu') {
             abrirMenuAcoes(button); return;
@@ -725,12 +767,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(action !== 'toggle-variacoes') { fecharMenuAcoes(); }
         const id = parseInt(button?.dataset.id || header?.dataset.id);
         const allActions = {
-            'toggle-variacoes': () => {
-                const container = document.getElementById(`variacoes-pb-${id}`);
-                const toggleIcon = header.querySelector('.produto-header-toggle');
-                container.classList.toggle('hidden');
-                toggleIcon.style.transform = container.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(90deg)';
-            },
             'adicionar-variacao': () => abrirModalVariacao(null, id),
             'salvar-estoque': async () => {
                 const input = document.getElementById(`estoque-v-${id}`);
@@ -752,19 +788,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function handleAcoesCombos(e) {
-        const button = e.target.closest('button');
-        const header = e.target.closest('.produto-header');
-        if (!button && !header) return;
-        const id = parseInt(button?.dataset.id || header?.dataset.id);
-        let action = button?.dataset.action;
-        if (!action && header && !e.target.closest('.actions-cell')) {
-            action = 'editar-combo';
-        }
-        if (!action) return;
+        const target = e.target;
+        const button = target.closest('button');
+        const header = target.closest('.produto-header');
         
-        if (action === 'toggle-actions-menu') {
+        if (button && button.dataset.action === 'toggle-actions-menu') {
             abrirMenuAcoes(button);
-        } else if (action === 'editar-combo') {
+        } else if (header) {
+            const id = parseInt(header.dataset.id);
             abrirModalCombo(id);
         }
     }

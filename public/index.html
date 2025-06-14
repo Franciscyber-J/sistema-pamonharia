@@ -96,6 +96,8 @@
         #custom-alert-modal { background: var(--cor-superficie); padding: 25px; border-radius: 10px; width: 90%; max-width: 400px; text-align: center; border: 1px solid var(--cor-borda); }
         #custom-alert-message { margin: 0; margin-bottom: 20px; font-size: 1.1em; line-height: 1.5; }
         #custom-alert-buttons { display: flex; justify-content: center; gap: 15px; }
+        /* CORREÇÃO: Botões maiores no modal de alerta */
+        #custom-alert-buttons button { padding: 12px 25px; font-size: 1em; }
         @media (min-width: 992px) { .container { flex-direction: row; align-items: flex-start; gap: 40px; } .menu { flex: 2; } .cart-checkout-container { flex: 1; position: sticky; top: 20px; max-width: 450px; } }
     </style>
 </head>
@@ -162,7 +164,7 @@
         let selecaoModal = { produtoBaseId: null, variacoes: {} };
         let selecaoComboModal = { combo: null, itens: {}, totalSelecionado: 0 };
         let liveInventory = {};
-        let productDetails = {}; // CORREÇÃO: Declarada a variável que faltava
+        let productDetails = {};
         const socket = io(backendUrl, { transports: ['websocket'] });
         let lojaEstaAberta = false;
         let mensagemLojaFechada = 'A loja está fechada no momento.';
@@ -266,7 +268,6 @@
                 produtosCache = (await produtosRes.json()).data;
                 combosCache = (await combosRes.json()).data;
                 
-                // CORREÇÃO: Populando o objeto productDetails
                 productDetails = {};
                 produtosCache.forEach(p => {
                     (p.variacoes || []).forEach(v => {
@@ -414,7 +415,6 @@
         function mudarQuantidadeModal(slug, delta) {
             const variacao = selecaoModal.variacoes[slug];
             if (!variacao) return;
-
             const variacaoDetails = productDetails[slug];
             const estoqueDisponivel = getEstoqueDisponivel(slug);
             const novaQuantidade = variacao.quantidade + delta;
