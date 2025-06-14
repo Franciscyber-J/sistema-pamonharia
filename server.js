@@ -121,7 +121,7 @@ async function initializeInventory() {
                 preco: item.preco
             };
         });
-        console.log('Inventário e detalhes inicializados com sucesso.');
+        console.log('Inventário inicializado com sucesso.');
     } catch (error) {
         console.error('ERRO CRÍTICO ao inicializar o inventário:', error);
     }
@@ -467,10 +467,10 @@ app.delete('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
 app.post('/variacao/estoque', protegerRota, async (req, res) => {
     try {
         const { id, quantidade } = req.body;
-        const { rows } = await db.query(`UPDATE variacoes SET quantidade_estoque = $1 WHERE id = $2 RETURNING slug`, [quantidade, id]);
+        await db.query(`UPDATE variacoes SET quantidade_estoque = $1 WHERE id = $2 RETURNING slug`, [quantidade, id]);
         
-        await initializeInventory(); // Recarrega todo o inventário para garantir consistência
-        io.emit('estado_inicial_estoque', liveInventory); // Emite o novo estado completo para todos os clientes
+        await initializeInventory(); 
+        io.emit('estado_inicial_estoque', liveInventory); 
         
         res.json({ message: `Estoque da variação atualizado.` });
     } catch (err) { res.status(500).json({ "error": err.message }); }
@@ -534,7 +534,9 @@ app.post('/dashboard/produtos/reordenar', protegerRota, apenasAdmin, async (req,
         client.release();
     }
 });
-app.post('/pedido', protegerRota, async (req, res) => {
+
+// ROTA DE PEDIDO ATUALIZADA
+app.post('/pedido', async (req, res) => {
     const { itens } = req.body;
     if (!itens || !Array.isArray(itens) || itens.length === 0) {
         return res.status(400).json({ error: 'Formato de itens inválido.' });
@@ -544,16 +546,18 @@ app.post('/pedido', protegerRota, async (req, res) => {
         await client.query('BEGIN');
         const updates = [];
         for (const item of itens) {
+            if (item.isCombo) continue; // Ignora combos, pois seus sub-itens já foram processados
+            
             const updateQuery = "UPDATE variacoes SET quantidade_estoque = quantidade_estoque - $1 WHERE id = $2 AND quantidade_estoque >= $1 RETURNING slug, quantidade_estoque";
-            const result = await client.query(updateQuery, [item.qtd, item.id]);
+            const result = await client.query(updateQuery, [item.quantidade, item.id]);
             if (result.rowCount === 0) {
-                throw new Error(`Estoque insuficiente para o item ID ${item.id}.`);
+                const details = productDetails[item.slug] || { nome: `Item ID ${item.id}` };
+                throw new Error(`Estoque insuficiente para o item: ${details.nome}.`);
             }
             updates.push(result.rows[0]);
         }
         await client.query('COMMIT');
         
-        // Emite atualizações de estoque após o commit
         const stockUpdates = {};
         updates.forEach(upd => {
             liveInventory[upd.slug] = upd.quantidade_estoque;
@@ -561,15 +565,16 @@ app.post('/pedido', protegerRota, async (req, res) => {
         });
         io.emit('estoque_atualizado', stockUpdates);
         
-        res.json({ message: "Processo de baixa de estoque concluído com sucesso." });
+        res.json({ message: "Pedido processado e estoque deduzido com sucesso." });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error("Erro na transação de pedido, rollback executado:", err);
-        res.status(500).json({ error: "Erro interno ao processar baixa de estoque. A operação foi cancelada." });
+        res.status(500).json({ error: err.message });
     } finally {
         client.release();
     }
 });
+
 app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
     const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);

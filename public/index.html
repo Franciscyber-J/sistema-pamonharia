@@ -184,14 +184,11 @@
         const storeStatusBanner = document.getElementById('store-status-banner');
         const operatingHoursList = document.getElementById('operating-hours-list');
 
-        // --- LÓGICA DE WEBSOCKET (NOVA ARQUITETURA) ---
         socket.on('connect', () => console.log('Conectado ao servidor em tempo real!', socket.id));
-        
         socket.on('estado_inicial_estoque', (inventarioInicial) => {
             liveInventory = inventarioInicial;
             carregarDadosEstaticos();
         });
-        
         socket.on('estoque_atualizado', (estoques) => {
             Object.assign(liveInventory, estoques);
             renderizarCardapio();
@@ -204,9 +201,7 @@
                 abrirModalCombo(selecaoComboModal.combo.id);
             }
         });
-        
         socket.on('cardapio_alterado', () => carregarDadosEstaticos());
-        
         socket.on('force_cart_reset', () => {
             if (carrinho.length > 0) {
                 alert('Seu carrinho expirou por inatividade e foi esvaziado para liberar os itens para outros clientes.');
@@ -214,17 +209,14 @@
                 atualizarDisplayCarrinho();
             }
         });
-        
         socket.on('carrinho_atualizado', (carrinhoDoServidor) => {
             carrinho = carrinhoDoServidor;
             atualizarDisplayCarrinho();
         });
-        
         socket.on('falha_adicionar_item', (data) => {
             alert(`Desculpe, não foi possível adicionar o item "${data.nome}". Estoque disponível: ${data.estoque_disponivel}.`);
         });
 
-        // --- LÓGICA PRINCIPAL ---
         async function carregarDadosEstaticos() {
             try {
                 const statusRes = await fetch(`${backendUrl}/api/loja/status`);
@@ -381,7 +373,7 @@
             }
             if (novaQuantidade >= 0) {
                 variacao.quantidade = novaQuantidade;
-                document.getElementById(`qty-v-${slug}`).innerText = variacao.quantidade;
+                document.getElementById(`qty-v-${v.slug}`).innerText = variacao.quantidade;
             }
         }
 
@@ -466,6 +458,7 @@
                 if(item.upcharge > 0) { upcharge += item.quantidade * item.upcharge; }
             }
             selecaoComboModal.totalSelecionado = totalSelecionado;
+            selecaoComboModal.upcharge = upcharge;
             const totalObrigatorio = selecaoComboModal.combo.quantidade_itens_obrigatoria;
             const statusEl = document.getElementById('combo-status');
             statusEl.innerText = `Selecione ${totalObrigatorio} itens (${totalSelecionado} / ${totalObrigatorio})`;
@@ -483,24 +476,20 @@
             for(const slug in itens) {
                 if (itens[slug].quantidade > 0) {
                     detalhes.push(`${itens[slug].quantidade}x ${itens[slug].produtoBase.nome} (${itens[slug].nome})`);
+                    socket.emit('adicionar_item_carrinho', { slug: slug, quantidade: itens[slug].quantidade });
                 }
             }
-
+            
             const comboParaAdicionar = {
                 id: `combo-${combo.id}-${Date.now()}`,
                 nome: combo.nome,
                 preco: precoFinal,
                 quantidade: 1,
                 detalhes: detalhes.join(', '),
-                isCombo: true,
+                isCombo: true
             };
-            
-            for(const slug in itens) {
-                if (itens[slug].quantidade > 0) {
-                    socket.emit('adicionar_item_carrinho', { slug: slug, quantidade: itens[slug].quantidade });
-                }
-            }
             socket.emit('adicionar_item_carrinho', { isCombo: true, comboDetails: comboParaAdicionar });
+
             fecharModal();
         }
 
@@ -564,7 +553,13 @@
 
         async function finalizarPedidoWhatsApp(event) {
             event.preventDefault();
-            if (carrinho.length === 0) { alert('Seu carrinho está vazio!'); return; }
+            
+            const finalizeButton = document.getElementById('finalize-button');
+            if (finalizeButton.classList.contains('disabled')) return;
+            if (carrinho.length === 0) {
+                alert('Seu carrinho está vazio!');
+                return;
+            }
             const tipoRecebimento = document.querySelector('input[name="tipo-recebimento"]:checked').value;
             const nomeRecebedor = document.getElementById('nome-recebedor').value.trim();
             const endereco = document.getElementById('endereco-entrega').value.trim();
@@ -572,39 +567,65 @@
                 alert('Por favor, preencha o nome de quem irá receber e o endereço completo para a entrega.');
                 return;
             }
-            
-            socket.emit('limpar_carrinho');
 
-            let subtotal = 0;
-            let mensagem = 'Olá! Gostaria de fazer o seguinte pedido pelo cardápio online:\n\n';
-            mensagem += '🍽️ *ITENS DO PEDIDO*\n';
-            carrinho.forEach(item => {
-                mensagem += `*${item.quantidade}x* ${item.nome}`;
-                if (item.detalhes) {
-                    mensagem += `\n  ↳ _(${item.detalhes})_`;
-                }
+            const confirmacao = confirm("Podemos confirmar seu pedido e enviá-lo para o WhatsApp?");
+            if (!confirmacao) return;
+
+            finalizeButton.classList.add('disabled');
+            finalizeButton.innerHTML = 'Processando...';
+
+            const itensDoPedido = carrinho.map(item => {
+                if (item.isCombo) return { isCombo: true }; // Apenas um marcador
+                return { id: parseInt(item.id.split('-')[1]), quantidade: item.quantidade, slug: item.slug };
+            }).filter(i => !i.isCombo);
+
+            try {
+                const response = await fetch(`${backendUrl}/pedido`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', },
+                    body: JSON.stringify({ itens: itensDoPedido })
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Não foi possível processar o pedido.');
+
+                console.log(result.message);
+
+                let subtotal = 0;
+                let mensagem = 'Olá! Gostaria de fazer o seguinte pedido (já confirmado em estoque):\n\n';
+                mensagem += '🍽️ *ITENS DO PEDIDO*\n';
+                carrinho.forEach(item => {
+                    mensagem += `*${item.quantidade}x* ${item.nome}`;
+                    if (item.detalhes) mensagem += `\n  ↳ _(${item.detalhes})_`;
+                    mensagem += '\n';
+                    subtotal += item.preco * item.quantidade;
+                });
                 mensagem += '\n';
-                subtotal += item.preco * item.quantidade;
-            });
-            mensagem += '\n';
-            const formaPagamento = document.querySelector('input[name="forma-pagamento"]:checked').value;
-            if (tipoRecebimento === 'Entrega') {
-                mensagem += `👤 *NOME PARA ENTREGA*\n${nomeRecebedor}\n\n🏠 *ENDEREÇO*\n${endereco}\n\n`;
-            } else {
-                mensagem += `🚶 *RETIRADA NO LOCAL*\n\n`;
+                const formaPagamento = document.querySelector('input[name="forma-pagamento"]:checked').value;
+                if (tipoRecebimento === 'Entrega') {
+                    mensagem += `👤 *NOME PARA ENTREGA*\n${nomeRecebedor}\n\n🏠 *ENDEREÇO*\n${endereco}\n\n`;
+                } else {
+                    mensagem += `🚶 *RETIRADA NO LOCAL*\n\n`;
+                }
+                mensagem += `💳 *PAGAMENTO*\n${formaPagamento}\n\n`;
+                let totalFinal = subtotal;
+                if (tipoRecebimento === 'Entrega') {
+                    totalFinal += TAXA_ENTREGA;
+                    mensagem += `Subtotal: R$ ${subtotal.toFixed(2).replace('.', ',')}\nTaxa de Entrega: R$ ${TAXA_ENTREGA.toFixed(2).replace('.', ',')}\n`;
+                }
+                mensagem += `*TOTAL: R$ ${totalFinal.toFixed(2).replace('.', ',')}*`;
+                const link = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensagem)}`;
+                
+                socket.emit('limpar_carrinho');
+                carrinho = [];
+                atualizarDisplayCarrinho();
+                window.open(link, '_blank');
+                finalizeButton.innerHTML = '<svg.../>Finalizar Pedido'; // Restaurar o botão
+
+            } catch (error) {
+                alert(`ERRO: ${error.message}\n\nSeu pedido não foi finalizado. Por favor, verifique seu carrinho e tente novamente.`);
+                finalizeButton.classList.remove('disabled');
+                finalizeButton.innerHTML = '<svg.../>Finalizar Pedido';
             }
-            mensagem += `💳 *PAGAMENTO*\n${formaPagamento}\n\n`;
-            let totalFinal = subtotal;
-            if (tipoRecebimento === 'Entrega') {
-                totalFinal += TAXA_ENTREGA;
-                mensagem += `Subtotal: R$ ${subtotal.toFixed(2).replace('.', ',')}\nTaxa de Entrega: R$ ${TAXA_ENTREGA.toFixed(2).replace('.', ',')}\n`;
-            }
-            mensagem += `*TOTAL: R$ ${totalFinal.toFixed(2).replace('.', ',')}*`;
-            const link = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensagem)}`;
-            
-            carrinho = [];
-            atualizarDisplayCarrinho();
-            window.open(link, '_blank');
         }
     </script>
 </body>
