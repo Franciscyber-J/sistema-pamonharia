@@ -150,34 +150,59 @@ io.on('connection', (socket) => {
         if (!userSession) return;
         
         userSession.lastActivity = Date.now();
-        const { slug, quantidade, isCombo, comboDetails } = itemRequest;
+        
+        if (liveInventory[itemRequest.slug] >= itemRequest.quantidade) {
+            updateLiveInventoryAndBroadcast(itemRequest.slug, -itemRequest.quantidade);
+            
+            const details = productDetails[itemRequest.slug];
+            const existingItem = userSession.cart.find(i => i.slug === itemRequest.slug && !i.isCombo);
 
-        if (isCombo) {
-            userSession.cart.push({ ...comboDetails, isCombo: true, id: `combo-${Date.now()}` });
-        } else {
-            if (liveInventory[slug] >= quantidade) {
-                updateLiveInventoryAndBroadcast(slug, -quantidade);
-                
-                const details = productDetails[slug];
-                const existingItem = userSession.cart.find(i => i.slug === slug && !i.isCombo);
-
-                if (existingItem) {
-                    existingItem.quantidade += quantidade;
-                } else {
-                    userSession.cart.push({
-                        id: `prod-${details.id}`,
-                        slug: slug,
-                        nome: details.nome,
-                        preco: details.preco,
-                        quantidade: quantidade,
-                        isCombo: false
-                    });
-                }
+            if (existingItem) {
+                existingItem.quantidade += itemRequest.quantidade;
             } else {
-                socket.emit('falha_adicionar_item', { nome: productDetails[slug]?.nome || 'Item desconhecido', estoque_disponivel: liveInventory[slug] });
+                userSession.cart.push({
+                    id: `prod-${details.id}`,
+                    slug: itemRequest.slug,
+                    nome: details.nome,
+                    preco: details.preco,
+                    quantidade: itemRequest.quantidade,
+                    isCombo: false
+                });
+            }
+            socket.emit('carrinho_atualizado', userSession.cart);
+        } else {
+            socket.emit('falha_adicionar_item', { nome: productDetails[itemRequest.slug]?.nome || 'Item desconhecido', estoque_disponivel: liveInventory[itemRequest.slug] });
+        }
+    });
+
+    socket.on('adicionar_combo_carrinho', (comboRequest) => {
+        const userSession = userCarts.get(socket.id);
+        if (!userSession) return;
+
+        userSession.lastActivity = Date.now();
+        const { comboDetails, subItens } = comboRequest;
+
+        let podeAdicionarCombo = true;
+        for (const subItem of subItens) {
+            if (liveInventory[subItem.slug] < subItem.quantidade) {
+                podeAdicionarCombo = false;
+                socket.emit('falha_adicionar_item', { nome: productDetails[subItem.slug]?.nome, estoque_disponivel: liveInventory[subItem.slug] });
+                break;
             }
         }
-        socket.emit('carrinho_atualizado', userSession.cart);
+
+        if (podeAdicionarCombo) {
+            subItens.forEach(subItem => {
+                updateLiveInventoryAndBroadcast(subItem.slug, -subItem.quantidade);
+            });
+
+            userSession.cart.push({
+                ...comboDetails,
+                isCombo: true,
+                id: `combo-${Date.now()}`
+            });
+            socket.emit('carrinho_atualizado', userSession.cart);
+        }
     });
 
     socket.on('remover_item_carrinho', (itemId) => {
@@ -189,7 +214,11 @@ io.on('connection', (socket) => {
 
         if (itemIndex > -1) {
             const item = userSession.cart[itemIndex];
-            if (!item.isCombo && item.slug) {
+            if (item.isCombo) {
+                item.subItens.forEach(subItem => {
+                    updateLiveInventoryAndBroadcast(subItem.slug, subItem.quantidade);
+                });
+            } else {
                 updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
             }
             userSession.cart.splice(itemIndex, 1);
@@ -199,12 +228,7 @@ io.on('connection', (socket) => {
     
     socket.on('limpar_carrinho', () => {
         const userSession = userCarts.get(socket.id);
-        if (userSession && userSession.cart) {
-            for (const item of userSession.cart) {
-                if (!item.isCombo && item.slug) {
-                     updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
-                }
-            }
+        if (userSession && userSession.cart.length > 0) {
             userSession.cart = [];
             socket.emit('carrinho_atualizado', userSession.cart);
         }
@@ -215,7 +239,9 @@ io.on('connection', (socket) => {
         const userSession = userCarts.get(socket.id);
         if (userSession && userSession.cart) {
             for (const item of userSession.cart) {
-                 if (!item.isCombo && item.slug) {
+                 if (item.isCombo) {
+                    item.subItens.forEach(sub => updateLiveInventoryAndBroadcast(sub.slug, sub.quantidade));
+                 } else {
                     updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
                 }
             }
@@ -232,7 +258,9 @@ setInterval(() => {
             const cart = session.cart;
             if (cart && cart.length > 0) {
                 for (const item of cart) {
-                    if (!item.isCombo && item.slug) {
+                    if (item.isCombo) {
+                        item.subItens.forEach(sub => updateLiveInventoryAndBroadcast(sub.slug, sub.quantidade));
+                    } else {
                         updateLiveInventoryAndBroadcast(item.slug, item.quantidade);
                     }
                 }
@@ -297,6 +325,7 @@ app.get('/api/loja/status', async (req, res) => {
         res.status(500).json({ error: 'Erro ao verificar status da loja.' });
     }
 });
+
 app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
     try {
         const { rows } = await db.query('SELECT * FROM configuracao_loja WHERE id = 1');
@@ -306,6 +335,7 @@ app.get('/api/dashboard/loja/configuracoes', protegerRota, async (req, res) => {
         res.status(500).json({ error: 'Erro ao buscar configurações.' });
     }
 });
+
 app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { aberta_manualmente, fechada_manualmente, horarios_json } = req.body;
@@ -317,6 +347,7 @@ app.put('/api/dashboard/loja/configuracoes', protegerRota, apenasAdmin, async (r
         res.status(500).json({ error: 'Erro ao atualizar configurações.' });
     }
 });
+
 app.post('/api/dashboard/loja/status-manual', protegerRota, async (req, res) => {
     try {
         const { aberta_manualmente, fechada_manualmente } = req.body;
@@ -328,15 +359,18 @@ app.post('/api/dashboard/loja/status-manual', protegerRota, async (req, res) => 
         res.status(500).json({ error: 'Erro ao atualizar status manual da loja.' });
     }
 });
+
 const getCardapioCompleto = async () => {
     const sql = `SELECT pb.id, pb.nome, pb.descricao, pb.imagem_url, pb.ordem, s.nome as setor_nome, s.id as setor_id, COALESCE((SELECT json_agg(json_build_object('id', v.id, 'nome', v.nome, 'preco', v.preco, 'slug', v.slug, 'quantidade_estoque', v.quantidade_estoque) ORDER BY v.id) FROM variacoes v WHERE v.produto_base_id = pb.id), '[]'::json) as variacoes FROM produtos_base pb LEFT JOIN setores s ON pb.setor_id = s.id ORDER BY pb.ordem, pb.nome`;
     const { rows } = await db.query(sql);
     return rows;
 };
+
 app.get('/api/cardapio', async (req, res) => {
     try { const cardapio = await getCardapioCompleto(); res.json({ data: cardapio }); } 
     catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.get('/api/produtos', async (req, res) => {
     try {
         const sql = `SELECT v.id, v.slug, v.nome AS nome_variacao, v.preco, v.quantidade_estoque, pb.nome AS nome_base FROM variacoes v JOIN produtos_base pb ON v.produto_base_id = pb.id`;
@@ -345,6 +379,7 @@ app.get('/api/produtos', async (req, res) => {
         res.json({ data });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.get('/api/dashboard/produtos', protegerRota, async (req, res) => {
     try {
         const produtos = await getCardapioCompleto();
@@ -354,6 +389,7 @@ app.get('/api/dashboard/produtos', protegerRota, async (req, res) => {
         res.status(500).json({ error: "Erro ao buscar produtos para o dashboard." }); 
     }
 });
+
 app.get('/setores', protegerRota, async (req, res) => {
     try {
         const { rows } = await db.query("SELECT * FROM setores ORDER BY nome");
@@ -363,6 +399,7 @@ app.get('/setores', protegerRota, async (req, res) => {
         res.status(500).json({ error: "Erro ao buscar setores." });
     }
 });
+
 app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
     try {
         const sql = `SELECT c.*, COALESCE(json_agg(rc.*) FILTER (WHERE rc.id IS NOT NULL), '[]'::json) as regras FROM combos c LEFT JOIN regras_combo rc ON rc.combo_id = c.id GROUP BY c.id ORDER BY c.id;`;
@@ -373,6 +410,7 @@ app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
         res.status(500).json({ error: "Erro ao buscar combos para o dashboard." });
     }
 });
+
 app.get('/api/combos', async (req, res) => {
     try {
         const sql = `SELECT c.*, COALESCE((SELECT json_agg(rc.*) FROM regras_combo rc WHERE rc.combo_id = c.id), '[]'::json) as regras FROM combos c WHERE c.ativo = true ORDER BY c.id;`;
@@ -380,6 +418,7 @@ app.get('/api/combos', async (req, res) => {
         res.json({ data: rows });
     } catch (err) { res.status(500).json({ error: "Erro ao buscar combos." }); }
 });
+
 app.post('/produtos_base', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     try {
         const { nome, descricao, setor_id } = req.body;
@@ -390,6 +429,7 @@ app.post('/produtos_base', protegerRota, apenasAdmin, upload.single('imagem'), a
         res.status(201).send();
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.put('/produtos_base/:id', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     try {
         const { id } = req.params;
@@ -410,6 +450,7 @@ app.put('/produtos_base/:id', protegerRota, apenasAdmin, upload.single('imagem')
         res.json({ message: 'Produto base atualizado!' });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.delete('/produtos_base/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query(`DELETE FROM produtos_base WHERE id = $1`, [req.params.id]);
@@ -417,6 +458,7 @@ app.delete('/produtos_base/:id', protegerRota, apenasAdmin, async (req, res) => 
         res.json({ message: 'Produto base e suas variações foram excluídos.' });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.post('/produtos_base/:id/duplicar', protegerRota, apenasAdmin, async (req, res) => {
     const client = await db.pool.connect();
     try {
@@ -444,6 +486,7 @@ app.post('/produtos_base/:id/duplicar', protegerRota, apenasAdmin, async (req, r
         client.release();
     }
 });
+
 app.post('/setores', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query(`INSERT INTO setores (nome) VALUES ($1) RETURNING id`, [req.body.nome]);
@@ -451,6 +494,7 @@ app.post('/setores', protegerRota, apenasAdmin, async (req, res) => {
         res.status(201).send();
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.put('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query(`UPDATE setores SET nome = $1 WHERE id = $2`, [req.body.nome, req.params.id]);
@@ -458,6 +502,7 @@ app.put('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
         res.json({ message: "Setor atualizado." });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.delete('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query(`DELETE FROM setores WHERE id = $1`, [req.params.id]);
@@ -465,17 +510,17 @@ app.delete('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
         res.json({ message: "Setor excluído." });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.post('/variacao/estoque', protegerRota, async (req, res) => {
     try {
         const { id, quantidade } = req.body;
-        await db.query(`UPDATE variacoes SET quantidade_estoque = $1 WHERE id = $2 RETURNING slug`, [quantidade, id]);
-        
+        await db.query(`UPDATE variacoes SET quantidade_estoque = $1 WHERE id = $2`, [quantidade, id]);
         await initializeInventory(); 
-        io.emit('estado_inicial_estoque', liveInventory); 
-        
+        io.emit('estado_inicial_estoque', liveInventory);
         res.json({ message: `Estoque da variação atualizado.` });
     } catch (err) { res.status(500).json({ "error": err.message }); }
 });
+
 app.post('/variacoes', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { produto_base_id, nome, slug, preco } = req.body;
@@ -485,6 +530,7 @@ app.post('/variacoes', protegerRota, apenasAdmin, async (req, res) => {
         res.status(201).send();
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.put('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { nome, slug, preco } = req.body;
@@ -494,6 +540,7 @@ app.put('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
         res.json({ message: 'Variação atualizada!' });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.delete('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query(`DELETE FROM variacoes WHERE id = $1`, [req.params.id]);
@@ -502,6 +549,7 @@ app.delete('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
         res.json({ message: 'Variação excluída.' });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.post('/variacoes/:id/duplicar', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { rows } = await db.query('SELECT * FROM variacoes WHERE id = $1', [req.params.id]);
@@ -515,6 +563,7 @@ app.post('/variacoes/:id/duplicar', protegerRota, apenasAdmin, async (req, res) 
         res.json({ message: 'Variação duplicada com sucesso!'});
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.post('/dashboard/produtos/reordenar', protegerRota, apenasAdmin, async (req, res) => {
     const { order } = req.body;
     if (!order || !Array.isArray(order)) { return res.status(400).json({ error: "Formato de ordem inválido." }); }
@@ -548,7 +597,6 @@ app.post('/pedido', async (req, res) => {
 
         const itensComProblema = [];
         for (const item of itens) {
-            if (item.isCombo) continue;
             const stockCheck = await client.query("SELECT quantidade_estoque FROM variacoes WHERE id = $1 FOR UPDATE", [item.id]);
             if (stockCheck.rows.length === 0 || stockCheck.rows[0].quantidade_estoque < item.quantidade) {
                 const details = productDetails[item.slug] || { nome: `Item ID ${item.id}` };
@@ -564,7 +612,6 @@ app.post('/pedido', async (req, res) => {
         
         const updates = [];
         for (const item of itens) {
-            if (item.isCombo) continue;
             const updateQuery = "UPDATE variacoes SET quantidade_estoque = quantidade_estoque - $1 WHERE id = $2 RETURNING slug, quantidade_estoque";
             const result = await client.query(updateQuery, [item.quantidade, item.id]);
             updates.push(result.rows[0]);
@@ -588,6 +635,7 @@ app.post('/pedido', async (req, res) => {
         client.release();
     }
 });
+
 app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
     const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
@@ -616,6 +664,7 @@ app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imag
         client.release();
     }
 });
+
 app.put('/api/dashboard/combos/:id', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     const { id } = req.params;
     if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
@@ -653,6 +702,7 @@ app.put('/api/dashboard/combos/:id', protegerRota, apenasAdmin, upload.single('i
         client.release();
     }
 });
+
 app.delete('/api/dashboard/combos/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {
         await db.query('DELETE FROM combos WHERE id = $1', [req.params.id]);

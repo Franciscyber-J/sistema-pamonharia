@@ -10,7 +10,6 @@
             --cor-superficie: #21262d; --cor-borda: #30363d; --cor-texto-principal: #e6edf3;
             --cor-texto-secundario: #8b949e; --cor-whatsapp: #128C7E; --cor-exclusao: #e74c3c; --cor-badge: #f85149;
             --cor-aviso: #f39c12; --cor-loja-fechada: #e74c3c;
-            --cor-gemini: #8e44ad; --cor-gemini-hover: #9b59b6;
         }
         * { box-sizing: border-box; }
         html { scroll-behavior: smooth; }
@@ -30,24 +29,9 @@
         .product-card-content { padding: 15px; display: flex; flex-direction: column; flex-grow: 1; }
         .product-card h3 { margin-top: 0; color: var(--cor-texto-principal); }
         .product-card p { color: var(--cor-texto-secundario); font-size: 0.9em; flex-grow: 1; min-height: 60px; }
-        .product-actions { display: flex; gap: 10px; margin-top: 15px; }
-        .add-button { background-color: var(--cor-principal); color: white; border: none; padding: 12px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; transition: background-color 0.2s; font-size: 16px; flex-grow: 1; }
+        .add-button { background-color: var(--cor-principal); color: white; border: none; padding: 12px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; transition: background-color 0.2s; font-size: 16px; flex-grow: 1; margin-top: 15px; }
         .add-button:hover { background-color: var(--cor-principal-hover); }
         .add-button:disabled { background-color: #555; color: var(--cor-texto-secundario); cursor: not-allowed; }
-        .gemini-btn { background-color: var(--cor-gemini); color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; font-size: 1.2rem; line-height: 1; transition: background-color 0.2s; }
-        .gemini-btn:hover { background-color: var(--cor-gemini-hover); }
-        .gemini-btn-group { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
-        .gemini-btn-small { background-color: transparent; color: var(--cor-gemini); border: 1px solid var(--cor-gemini); font-size: 0.8rem; padding: 6px 8px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; transition: all 0.2s; }
-        .gemini-btn-small:hover { background-color: var(--cor-gemini); color: white; }
-        #gemini-modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 3000; }
-        #gemini-modal { background: var(--cor-superficie); padding: 25px; border-radius: 10px; width: 90%; max-width: 500px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); border: 1px solid var(--cor-gemini); }
-        #gemini-modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--cor-borda); padding-bottom: 15px; margin-bottom: 15px; }
-        #gemini-modal-title { margin: 0; font-size: 1.2em; color: var(--cor-gemini); }
-        #gemini-modal-content { min-height: 100px; line-height: 1.6; }
-        #gemini-modal-footer { margin-top: 20px; text-align: right; }
-        .loading-spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--cor-gemini); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .copy-button { background-color: var(--cor-texto-secundario); color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-left: 10px; }
         .produto-esgotado { filter: grayscale(1); opacity: 0.7; }
         .cart-checkout-container { width: 100%; max-width: 600px; background: var(--cor-superficie); border: 1px solid var(--cor-borda); border-radius: 8px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
         .cart-checkout-container h2, .cart-checkout-container h3 { margin-top: 0; color: var(--cor-texto-principal); border-bottom: 1px solid var(--cor-borda); padding-bottom: 10px; }
@@ -84,7 +68,7 @@
         .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--cor-borda); padding-bottom: 15px; margin-bottom: 15px; }
         .modal-close-btn { font-size: 2rem; background: none; border: none; cursor: pointer; color: #888; }
         .modal-body { overflow-y: auto; padding-right: 15px; }
-        .variation-item { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 12px 5px; border-bottom: 1px solid var(--cor-borda); padding-right: 10px; }
+        .variation-item { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--cor-borda); }
         .variation-item.esgotado { filter: grayscale(1); opacity: 0.5; }
         .variation-item-info { flex-grow: 1; }
         .variation-item-info span { font-size: 1.1em; }
@@ -94,7 +78,7 @@
         .modal-footer { margin-top: 20px; }
         .modal-footer button { width: 100%; padding: 15px; font-size: 1.1em; }
         #combo-status { text-align: center; font-size: 1.2em; font-weight: bold; margin-bottom: 15px; color: var(--cor-principal); }
-        .combo-item { display: flex; flex-wrap: wrap; align-items: center; padding: 10px 5px; border-bottom: 1px solid var(--cor-borda); }
+        .combo-item { display: flex; flex-wrap: wrap; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--cor-borda); }
         .combo-item.esgotado { filter: grayscale(1); opacity: 0.5; }
         .combo-item:last-child { border-bottom: none; }
         .combo-item-info { flex-grow: 1; }
@@ -111,11 +95,11 @@
         .footer a { color: var(--cor-principal); text-decoration: none; font-weight: bold; }
         #operating-hours-container { margin-top: 10px; }
         #operating-hours-container p { margin: 4px 0; font-size: 0.9em; }
-        @media (min-width: 992px) { .container { flex-direction: row; align-items: flex-start; gap: 40px; } .menu { flex: 2; } .cart-checkout-container { flex: 1; position: sticky; top: 20px; max-width: 450px; } }
         #custom-alert-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: none; justify-content: center; align-items: center; z-index: 2000; }
         #custom-alert-modal { background: var(--cor-superficie); padding: 25px; border-radius: 10px; width: 90%; max-width: 400px; text-align: center; border: 1px solid var(--cor-borda); }
         #custom-alert-message { margin: 0; margin-bottom: 20px; font-size: 1.1em; line-height: 1.5; }
         #custom-alert-buttons { display: flex; justify-content: center; gap: 15px; }
+        @media (min-width: 992px) { .container { flex-direction: row; align-items: flex-start; gap: 40px; } .menu { flex: 2; } .cart-checkout-container { flex: 1; position: sticky; top: 20px; max-width: 450px; } }
     </style>
 </head>
 <body>
@@ -161,25 +145,14 @@
     <div class="modal-backdrop" id="variations-modal"><div class="modal"><div class="modal-header"><h2 id="modal-product-name"></h2><button class="modal-close-btn" onclick="fecharModal()">×</button></div><div class="modal-body" id="modal-variations-list"></div><div class="modal-footer"><button id="add-variations-btn" class="add-button" onclick="adicionarVariacoesAoCarrinho(this)">Adicionar ao Pedido</button></div></div></div>
     <div class="modal-backdrop" id="combo-builder-modal"><div class="modal"><div class="modal-header"><h2 id="combo-modal-product-name"></h2><button class="modal-close-btn" onclick="fecharModal()">×</button></div><div id="combo-status"></div><div class="modal-body" id="combo-modal-items-list"></div><div class="modal-footer"><button id="add-combo-button" class="add-button" onclick="adicionarComboAoCarrinho(this)">Adicionar Combo ao Pedido</button></div></div></div>
     <a href="#carrinho-secao" id="floating-cart-btn" class="floating-cart-btn"><svg class="cart-icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2zM7.17 14.75l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.37-.66-.11-1.48-.87-1.48H5.21l-.94-2H1v2h2l3.6 7.59-1.35 2.44C4.52 15.37 5.24 17 7 17h12v-2H7z"/></svg><span id="cart-item-count" class="cart-item-count">0</span></a>
+    
     <div id="custom-alert-backdrop">
         <div id="custom-alert-modal">
             <p id="custom-alert-message"></p>
             <div id="custom-alert-buttons"></div>
         </div>
     </div>
-    <div id="gemini-modal-backdrop">
-        <div id="gemini-modal">
-            <div id="gemini-modal-header">
-                <h3 id="gemini-modal-title">✨ Dica do Gemini</h3>
-                <button class="modal-close-btn" onclick="fecharModalGemini()">×</button>
-            </div>
-            <div id="gemini-modal-content"></div>
-            <div id="gemini-modal-footer">
-                <button class="cancel-btn" onclick="fecharModalGemini()">Fechar</button>
-            </div>
-        </div>
-    </div>
-
+    
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script>
         const backendUrl = 'https://pamonhariasaborosa.expertbr.com';
@@ -208,7 +181,7 @@
             const messageEl = document.getElementById('custom-alert-message');
             const buttonsEl = document.getElementById('custom-alert-buttons');
 
-            messageEl.innerHTML = message;
+            messageEl.innerHTML = message.replace(/\n/g, '<br>');
             buttonsEl.innerHTML = '';
 
             if (type === 'confirm') {
@@ -245,8 +218,12 @@
             renderizarCardapio();
             const variationsModal = document.getElementById('variations-modal');
             const comboModal = document.getElementById('combo-builder-modal');
-            if (variationsModal.style.display === 'flex') abrirModalVariacoes(selecaoModal.produtoBaseId);
-            if (comboModal.style.display === 'flex' && selecaoComboModal.combo) abrirModalCombo(selecaoComboModal.combo.id);
+            if (variationsModal.style.display === 'flex' && selecaoModal.produtoBaseId) {
+                abrirModalVariacoes(selecaoModal.produtoBaseId);
+            }
+            if (comboModal.style.display === 'flex' && selecaoComboModal.combo) {
+                abrirModalCombo(selecaoComboModal.combo.id);
+            }
         });
         socket.on('cardapio_alterado', () => carregarDadosEstaticos());
         socket.on('force_cart_reset', () => {
@@ -368,10 +345,6 @@
                     <img src="${item.imagem_url}" alt="${item.nome}">
                     <div class="product-card-content">
                         <div><h3>${item.nome}</h3><p>${item.descricao || ''}</p></div>
-                        <div class="gemini-btn-group">
-                             <button class="gemini-btn-small" onclick="handleGeminiClick('sugestao', '${item.nome}')">✨ Dica do Chef</button>
-                             <button class="gemini-btn-small" onclick="handleGeminiClick('convite', '${item.nome}')">✉️ Convidar um Amigo</button>
-                        </div>
                         <div class="product-actions">
                             <button class="add-button" onclick="handleProductClick('${item.tipo}', ${item.id})" ${isEsgotado ? 'disabled' : ''}>
                                 ${isEsgotado ? 'Esgotado' : (item.tipo === 'combo' ? 'Montar Combo' : 'Escolher Opções')}
@@ -383,11 +356,7 @@
         }
         
         function fecharModal() {
-            document.querySelectorAll('.modal-backdrop').forEach(modal => {
-                if (modal.id !== 'gemini-modal-backdrop') {
-                    modal.style.display = 'none';
-                }
-            });
+            document.querySelectorAll('.modal-backdrop').forEach(modal => modal.style.display = 'none');
         }
 
         function abrirModalVariacoes(produtoBaseId) {
@@ -442,8 +411,7 @@
                 if(variacao.quantidade > 0){
                     socket.emit('adicionar_item_carrinho', {
                         slug: variacao.slug,
-                        quantidade: variacao.quantidade,
-                        isCombo: false
+                        quantidade: variacao.quantidade
                     });
                 }
             }
@@ -530,11 +498,12 @@
             const { combo, itens, upcharge } = selecaoComboModal;
             const precoFinal = combo.preco_base + (upcharge || 0);
             let detalhes = [];
+            let subItens = [];
             
             for(const slug in itens) {
                 if (itens[slug].quantidade > 0) {
                     detalhes.push(`${itens[slug].quantidade}x ${itens[slug].produtoBase.nome} (${itens[slug].nome})`);
-                    socket.emit('adicionar_item_carrinho', { slug: slug, quantidade: itens[slug].quantidade });
+                    subItens.push({ slug: slug, quantidade: itens[slug].quantidade });
                 }
             }
             
@@ -545,9 +514,9 @@
                 quantidade: 1,
                 detalhes: detalhes.join(', '),
                 isCombo: true,
+                subItens: subItens
             };
-            socket.emit('adicionar_item_carrinho', { isCombo: true, comboDetails: comboParaAdicionar });
-
+            socket.emit('adicionar_combo_carrinho', comboParaAdicionar);
             fecharModal();
         }
 
@@ -631,11 +600,15 @@
             finalizeButton.innerHTML = 'Processando...';
 
             const itensDoPedido = carrinho.flatMap(item => {
-                if (item.isCombo) return [];
+                if (item.isCombo) {
+                    return item.subItens.map(sub => ({
+                        id: parseInt(productDetails[sub.slug].id),
+                        quantidade: sub.quantidade
+                    }));
+                }
                 return {
                     id: parseInt(item.id.split('-')[1]),
-                    quantidade: item.quantidade,
-                    slug: item.slug
+                    quantidade: item.quantidade
                 };
             });
 
@@ -687,79 +660,6 @@
                 finalizeButton.classList.remove('disabled');
                 finalizeButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" fill="white"><path d="M0 0h24v24H0z" fill="none"/><path d="M.01 21L23 12 .01 3 0 10l15 2-15 2z"/></svg>Finalizar Pedido`;
             }
-        }
-        
-        // --- FUNÇÕES GEMINI (NOVAS) ---
-        const geminiModalBackdrop = document.getElementById('gemini-modal-backdrop');
-        const geminiModalContent = document.getElementById('gemini-modal-content');
-        const geminiModalTitle = document.getElementById('gemini-modal-title');
-
-        async function handleGeminiClick(type, productName) {
-            geminiModalBackdrop.style.display = 'flex';
-            geminiModalContent.innerHTML = '<div class="loading-spinner"></div>';
-            
-            let prompt = '';
-            let title = '';
-
-            if (type === 'sugestao') {
-                title = `Dica para: ${productName}`;
-                prompt = `Aja como um sommelier ou chef de um restaurante brasileiro especializado em pamonhas em Goiás. Dê uma sugestão criativa e curta (máximo 3 frases) de harmonização ou uma dica de consumo para o prato "${productName}". Fale diretamente com o cliente em um tom amigável e convidativo. Use português do Brasil.`;
-            } else if (type === 'convite') {
-                title = 'Convide um Amigo';
-                prompt = `Crie uma mensagem curta e divertida (máximo 2 ou 3 linhas, com emojis) em português do Brasil para eu enviar no WhatsApp convidando um amigo para comer uma ${productName} na Pamonharia Saborosa do Goiás. A mensagem deve ser casual e convidativa.`;
-            }
-            
-            geminiModalTitle.innerText = title;
-
-            try {
-                let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
-                const payload = { contents: chatHistory };
-                const apiKey = ""
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-                
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                if (!response.ok) {
-                    throw new Error('Não foi possível obter uma resposta da IA no momento.');
-                }
-                
-                const result = await response.json();
-
-                if (result.candidates && result.candidates.length > 0) {
-                    const text = result.candidates[0].content.parts[0].text;
-                    geminiModalContent.innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
-                    
-                    if (type === 'convite') {
-                        const copyBtn = document.createElement('button');
-                        copyBtn.textContent = 'Copiar Texto';
-                        copyBtn.className = 'copy-button';
-                        copyBtn.onclick = () => {
-                            const textarea = document.createElement('textarea');
-                            textarea.value = text;
-                            document.body.appendChild(textarea);
-                            textarea.select();
-                            document.execCommand('copy');
-                            document.body.removeChild(textarea);
-                            copyBtn.textContent = 'Copiado!';
-                            setTimeout(() => { copyBtn.textContent = 'Copiar Texto'; }, 2000);
-                        };
-                        geminiModalContent.appendChild(copyBtn);
-                    }
-                } else {
-                    throw new Error('Resposta da IA vazia ou mal formatada.');
-                }
-
-            } catch (error) {
-                geminiModalContent.innerHTML = `<p>Ocorreu um erro ao gerar a sugestão. Tente novamente mais tarde.</p><p><small>${error.message}</small></p>`;
-            }
-        }
-        
-        function fecharModalGemini() {
-            geminiModalBackdrop.style.display = 'none';
         }
     </script>
 </body>

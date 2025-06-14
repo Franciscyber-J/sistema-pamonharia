@@ -87,7 +87,6 @@ client.on('message_create', async msg => {
     const chatId = msg.from;
     const currentState = chatStates.get(chatId);
 
-    // Se o bot estiver aguardando a localização
     if (currentState === 'AGUARDANDO_LOCALIZACAO') {
         if (msg.hasLocation || msg.type === 'location') {
             await handleLocalizacaoRecebida(chat);
@@ -97,7 +96,6 @@ client.on('message_create', async msg => {
         return;
     }
 
-    // Se o usuário estiver falando com um humano
     if (currentState === 'HUMANO_ATIVO') {
         if (lowerBody === 'menu' || lowerBody === 'voltar') {
             chatStates.delete(chatId);
@@ -108,17 +106,14 @@ client.on('message_create', async msg => {
         return;
     }
     
-    // Verifica se a mensagem é um pedido colado do cardápio
     if (lowerBody.includes('itens do pedido') && lowerBody.includes('total: r$')) {
         await handlePedidoRecebido(chat, msg.body);
         return;
     }
 
-    // Se não for nada disso, mostra o menu principal com inteligência
     await enviarMenuPrincipal(chat, lowerBody);
 });
 
-// NOVO: Função para lidar com um pedido recebido
 async function handlePedidoRecebido(chat, textoPedido) {
     log('INFO', 'OrderHandler', `Pedido recebido e reconhecido para o chat ${chat.id._serialized}.`);
     
@@ -127,28 +122,25 @@ async function handlePedidoRecebido(chat, textoPedido) {
     if (textoPedido.includes('*RETIRADA NO LOCAL*')) {
         await chat.sendMessage(`Vimos que seu pedido é para retirada. Pode vir buscá-lo em nosso endereço:\n\n*Rua Tulipas, Quadra 01, Lote 06, C-02, Jardim Mondale*\n\n📍 Link para o mapa: https://maps.app.goo.gl/eseCGMFiB857R4BP9`);
     } else if (textoPedido.includes('*NOME PARA ENTREGA*')) {
-        await chat.sendMessage('Para agilizar sua entrega, por favor, nos envie sua localização atual usando a função de anexo do WhatsApp (📎).\n\nEste passo é opcional, mas ajuda muito nossos entregadores! Se não quiser, não precisa fazer nada. 😉');
+        // MENSAGEM AJUSTADA
+        await chat.sendMessage('Para agilizar sua entrega, por favor, nos envie sua localização atual usando a função de anexo do WhatsApp (📎).\n\n_Este passo é opcional, mas ajuda muito nossos entregadores a encontrarem seu endereço com precisão!_');
         chatStates.set(chat.id._serialized, 'AGUARDANDO_LOCALIZACAO');
     }
 }
 
-// NOVO: Função para lidar com a localização
 async function handleLocalizacaoRecebida(chat) {
     log('INFO', 'LocationHandler', `Localização recebida para o chat ${chat.id._serialized}.`);
     await chat.sendMessage('Localização recebida! Muito obrigado, isso ajudará bastante na sua entrega. 😊');
-    chatStates.delete(chat.id._serialized); // Finaliza o estado de espera
+    chatStates.delete(chat.id._serialized);
 }
 
-
-// ATUALIZADO: Função principal com mais inteligência
 async function enviarMenuPrincipal(chat, triggerMessage = '') {
     try {
-        log('INFO', 'Handler', `Processando mensagem para ${chat.id._serialized}. Gatilho: "${triggerMessage}"`);
+        log('INFO', 'Handler', `Processando mensagem para ${chat.id._serialized}. Usando status em cache: ${statusLojaCache.status}`);
         
         const lojaAberta = statusLojaCache.status === 'aberto';
         let saudacao = 'Olá! Bem-vindo(a) à *Pamonharia Saborosa do Goiás*! 🌽\n\n';
         
-        // Respostas contextuais
         const keywords = {
             pedido: ['pedido', 'cardapio', 'cardápio', 'pamonha', 'curau', 'bolo', 'bolinho', 'quero'],
             endereco: ['endereço', 'endereco', 'local', 'onde', 'localização'],
@@ -173,7 +165,6 @@ async function enviarMenuPrincipal(chat, triggerMessage = '') {
             chatStates.set(chat.id._serialized, 'HUMANO_ATIVO');
             log('INFO', 'Handover', `Transferindo chat ${chat.id._serialized} para atendimento humano.`);
         } else {
-            // Resposta padrão
             let mensagemPrincipal = lojaAberta 
                 ? `Estamos abertos! Para ver nosso cardápio completo com estoque em tempo real e montar seu pedido, clique no link abaixo:\n\n*${CONFIG.CARDAPIO_URL}*`
                 : `No momento estamos fechados. ${statusLojaCache.mensagem}\n\nMas você já pode conferir nosso cardápio para quando voltarmos! Clique no link abaixo:\n\n*${CONFIG.CARDAPIO_URL}*`;
