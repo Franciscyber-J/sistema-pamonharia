@@ -122,7 +122,6 @@ async function handlePedidoRecebido(chat, textoPedido) {
     if (textoPedido.includes('*RETIRADA NO LOCAL*')) {
         await chat.sendMessage(`Vimos que seu pedido é para retirada. Pode vir buscá-lo em nosso endereço:\n\n*Rua Tulipas, Quadra 01, Lote 06, C-02, Jardim Mondale*\n\n📍 Link para o mapa: https://maps.app.goo.gl/eseCGMFiB857R4BP9`);
     } else if (textoPedido.includes('*NOME PARA ENTREGA*')) {
-        // MENSAGEM AJUSTADA
         await chat.sendMessage('Para agilizar sua entrega, por favor, nos envie sua localização atual usando a função de anexo do WhatsApp (📎).\n\n_Este passo é opcional, mas ajuda muito nossos entregadores a encontrarem seu endereço com precisão!_');
         chatStates.set(chat.id._serialized, 'AGUARDANDO_LOCALIZACAO');
     }

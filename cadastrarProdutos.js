@@ -6,18 +6,32 @@ async function criarTabelas() {
 
   await db.query(`CREATE TABLE IF NOT EXISTS setores (id SERIAL PRIMARY KEY, nome TEXT UNIQUE NOT NULL)`);
   await db.query(`CREATE TABLE IF NOT EXISTS produtos_base (id SERIAL PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT, imagem_url TEXT, setor_id INTEGER, ordem INTEGER DEFAULT 0, FOREIGN KEY (setor_id) REFERENCES setores (id) ON DELETE SET NULL)`);
-  await db.query(`CREATE TABLE IF NOT EXISTS variacoes (id SERIAL PRIMARY KEY, produto_base_id INTEGER NOT NULL, nome TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, preco REAL NOT NULL, quantidade_estoque INTEGER DEFAULT 0, FOREIGN KEY (produto_base_id) REFERENCES produtos_base (id) ON DELETE CASCADE)`);
+  
+  // ATUALIZADO: Adicionada a coluna 'controlar_estoque'
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS variacoes (
+      id SERIAL PRIMARY KEY, 
+      produto_base_id INTEGER NOT NULL, 
+      nome TEXT NOT NULL, 
+      slug TEXT UNIQUE NOT NULL, 
+      preco REAL NOT NULL, 
+      quantidade_estoque INTEGER DEFAULT 0, 
+      controlar_estoque BOOLEAN DEFAULT true, -- NOVA COLUNA
+      FOREIGN KEY (produto_base_id) REFERENCES produtos_base (id) ON DELETE CASCADE
+    )
+  `);
+
   await db.query(`CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL, cargo TEXT NOT NULL DEFAULT 'operador')`);
   await db.query(`CREATE TABLE IF NOT EXISTS combos (id SERIAL PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT, preco_base REAL NOT NULL, imagem_url TEXT, ativo BOOLEAN DEFAULT true, quantidade_itens_obrigatoria INTEGER NOT NULL)`);
   await db.query(`CREATE TABLE IF NOT EXISTS regras_combo (id SERIAL PRIMARY KEY, combo_id INTEGER NOT NULL, setor_id_alvo INTEGER, produto_base_id_alvo INTEGER, upcharge REAL DEFAULT 0, FOREIGN KEY (combo_id) REFERENCES combos (id) ON DELETE CASCADE, FOREIGN KEY (setor_id_alvo) REFERENCES setores (id) ON DELETE CASCADE, FOREIGN KEY (produto_base_id_alvo) REFERENCES produtos_base (id) ON DELETE CASCADE)`);
 
-  // --- NOVA TABELA PARA HORÁRIO DE FUNCIONAMENTO ---
   await db.query(`
     CREATE TABLE IF NOT EXISTS configuracao_loja (
-        id INTEGER PRIMARY KEY DEFAULT 1,
-        aberta_manualmente BOOLEAN DEFAULT false,
-        horarios_json TEXT,
-        CHECK (id = 1) -- Garante que só possa existir uma linha nesta tabela
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      aberta_manualmente BOOLEAN DEFAULT false,
+      fechada_manualmente BOOLEAN DEFAULT false, -- Coluna adicionada em deploy anterior
+      horarios_json TEXT,
+      CHECK (id = 1)
     )
   `);
 

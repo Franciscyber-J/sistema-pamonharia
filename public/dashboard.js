@@ -26,16 +26,23 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Dashboard conectado ao servidor em tempo real!');
         });
 
-        socket.on('estado_inicial_estoque', () => {
-            console.log('Recebida atualização de estoque completa. Recarregando dados...');
+        socket.on('estado_inicial_estoque', (estoqueInicial) => {
+            console.log('Recebido estado inicial do estoque. Recarregando dados...');
             mostrarToast('Estoque sincronizado.', 'info');
-            carregarTudo();
+            cache.produtos.forEach(p => {
+                p.variacoes.forEach(v => {
+                    if(estoqueInicial[v.slug] !== undefined) {
+                        v.quantidade_estoque = estoqueInicial[v.slug];
+                    }
+                });
+            });
+            renderizarGerenciadorProdutos();
         });
 
-        // ATUALIZADO: Lógica para atualização de estoque sem recarregar tudo
         socket.on('estoque_atualizado', (estoques) => {
             console.log('Recebida atualização de estoque em tempo real:', estoques);
-            let precisaRecarregar = false;
+            let precisaRecarregarGeral = false;
+
             for (const slug in estoques) {
                 const variacao = cache.produtos.flatMap(p => p.variacoes).find(v => v.slug === slug);
                 if (variacao) {
@@ -44,16 +51,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (inputEstoque) {
                         inputEstoque.value = estoques[slug]; // Atualiza apenas o campo na tela
                     } else {
-                        precisaRecarregar = true; // Se o campo não está visível, talvez precise recarregar
+                        precisaRecarregarGeral = true; // Se o campo não está visível, talvez precise recarregar
                     }
                 } else {
-                     precisaRecarregar = true;
+                     precisaRecarregarGeral = true;
                 }
             }
-            if(!precisaRecarregar) {
-                mostrarToast('Estoque atualizado na tela!', 'info');
-            } else {
+
+            if(precisaRecarregarGeral) {
                 carregarTudo(); // Recarrega tudo como fallback
+            } else {
+                 mostrarToast('Estoque atualizado na tela!', 'info');
             }
         });
 
@@ -112,7 +120,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- LÓGICA DE CARREGAMENTO DE DADOS ---
     async function carregarTudo() {
         try {
-            // Salva o estado dos acordeões abertos
             const acordeoesAbertos = new Set();
             document.querySelectorAll('.variacoes-container:not(.hidden)').forEach(el => {
                 const id = el.id.replace('variacoes-pb-', '');
@@ -145,7 +152,6 @@ document.addEventListener('DOMContentLoaded', () => {
             inicializarDragAndDrop();
             aplicarPermissoes();
 
-            // Restaura o estado dos acordeões abertos
             acordeoesAbertos.forEach(id => {
                 const container = document.getElementById(`variacoes-pb-${id}`);
                 const header = document.querySelector(`.produto-header[data-id="${id}"]`);
@@ -598,22 +604,14 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleFormProdutoSubmit(e) {
         e.preventDefault(); 
         const id = document.getElementById('pb-id').value;
-        const formData = new FormData();
-        formData.append('nome', document.getElementById('pb-nome').value);
-        formData.append('descricao', document.getElementById('pb-descricao').value);
-        formData.append('setor_id', document.getElementById('pb-setor').value);
-        const imagemFile = document.getElementById('pb-imagem').files[0];
-        if (imagemFile) {
-            formData.append('imagem', imagemFile);
-        }
+        const formData = new FormData(e.target);
 
         const method = id ? 'PUT' : 'POST'; 
         const url = id ? `${backendUrl}/produtos_base/${id}` : `${backendUrl}/produtos_base`; 
         try { 
             const response = await fetchProtegido(url, { method, body: formData }); 
             if (!response.ok) throw new Error((await response.json()).error); 
-            fecharModais(); 
-            // Não precisa mais recarregar tudo, o evento de socket fará isso.
+            fecharModais();
         } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
     }
     
@@ -641,8 +639,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try { 
             const response = await fetchProtegido(url, { method, body: JSON.stringify(data) }); 
             if (!response.ok) throw new Error((await response.json()).error); 
-            fecharModais(); 
-            // O evento de socket cuidará da atualização
+            fecharModais();
         } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
     }
 
@@ -657,7 +654,6 @@ document.addEventListener('DOMContentLoaded', () => {
             await fetchProtegido(url, { method, body: JSON.stringify({ nome }) });
             document.getElementById('form-setor').reset();
             document.getElementById('setor-id').value = '';
-            // O evento de socket cuidará da atualização
         } catch(error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
     }
 
@@ -687,7 +683,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetchProtegido(url, { method, body: formData });
             if (!response.ok) throw new Error((await response.json()).error);
             fecharModais();
-            // O evento de socket cuidará da atualização
         } catch (error) {
             mostrarToast(`Erro ao salvar combo: ${error.message}`, 'erro');
         }

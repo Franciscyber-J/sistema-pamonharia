@@ -409,7 +409,7 @@
                 if(variacao.quantidade > 0){
                     socket.emit('adicionar_item_carrinho', {
                         slug: variacao.slug,
-                        quantidade: variacao.quantidade
+                        quantidade: variacao.quantidade,
                     });
                 }
             }
@@ -484,7 +484,7 @@
             selecaoComboModal.upcharge = upcharge;
             const totalObrigatorio = selecaoComboModal.combo.quantidade_itens_obrigatoria;
             const statusEl = document.getElementById('combo-status');
-            statusEl.innerText = `Selecione ${totalObrigatorio} itens (${totalSelecionado} / ${totalObrigatorio})`;
+            statusEl.innerText = `Selecione ${totalObrigatorio} itens (${totalSelecionado} / ${totalSelecionado})`;
             const addButton = document.getElementById('add-combo-button');
             addButton.disabled = totalSelecionado !== totalObrigatorio;
             statusEl.style.color = totalSelecionado === totalObrigatorio ? 'var(--cor-sucesso)' : 'var(--cor-principal)';
@@ -500,7 +500,7 @@
             for(const slug in itens) {
                 if (itens[slug].quantidade > 0) {
                     detalhes.push(`${itens[slug].quantidade}x ${itens[slug].produtoBase.nome} (${itens[slug].nome})`);
-                    subItens.push({ slug: slug, quantidade: itens[slug].quantidade, id: productDetails[slug].id });
+                    subItens.push({ slug: slug, quantidade: itens[slug].quantidade });
                 }
             }
             
@@ -509,7 +509,8 @@
                     nome: combo.nome,
                     preco: precoFinal,
                     quantidade: 1,
-                    detalhes: detalhes.join(', ')
+                    detalhes: detalhes.join(', '),
+                    subItens: subItens
                 },
                 subItens: subItens,
                 isCombo: true
@@ -601,7 +602,7 @@
             const itensDoPedido = carrinho.flatMap(item => {
                 if (item.isCombo) {
                     return item.subItens.map(sub => ({
-                        id: sub.id,
+                        id: productDetails[sub.slug].id,
                         quantidade: sub.quantidade,
                         slug: sub.slug
                     }));
