@@ -424,34 +424,26 @@ app.get('/setores', protegerRota, async (req, res) => {
     }
 });
 
+// *** BUG 1 FIX: Corrigida a query SQL para não duplicar regras de combos ***
 app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
     try {
-        const sql = `SELECT c.*, COALESCE(json_agg(rc.*) FILTER (WHERE rc.id IS NOT NULL), '[]'::json) as regras FROM combos c LEFT JOIN regras_combo rc ON rc.combo_id = c.id GROUP BY c.id ORDER BY c.id;`;
+        const sql = `
+            SELECT 
+                c.*, 
+                (SELECT COALESCE(json_agg(rc.*), '[]'::json) 
+                 FROM regras_combo rc 
+                 WHERE rc.combo_id = c.id) as regras 
+            FROM combos c 
+            ORDER BY c.id;
+        `;
         const { rows } = await db.query(sql);
-
-        // *** CORREÇÃO INICIO: Processamento para remover regras duplicadas ***
-        const combosProcessados = rows.map(combo => {
-            if (combo.regras && combo.regras.length > 0) {
-                const regrasUnicas = [];
-                const idsVistos = new Set();
-                for (const regra of combo.regras) {
-                    if (regra && !idsVistos.has(regra.id)) {
-                        regrasUnicas.push(regra);
-                        idsVistos.add(regra.id);
-                    }
-                }
-                combo.regras = regrasUnicas;
-            }
-            return combo;
-        });
-        // *** CORREÇÃO FIM ***
-
-        res.json({ data: combosProcessados });
+        res.json({ data: rows });
     } catch (err) {
         console.error("[ERRO DETALHADO] em /api/dashboard/combos:", err);
         res.status(500).json({ error: "Erro ao buscar combos para o dashboard." });
     }
 });
+
 
 app.get('/api/combos', async (req, res) => {
     try {
@@ -553,14 +545,39 @@ app.delete('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// *** BUG 2 FIX: Rota de estoque refatorada para ser eficiente e emitir atualização parcial ***
 app.post('/variacao/estoque', protegerRota, async (req, res) => {
     try {
         const { id, quantidade } = req.body;
-        await db.query(`UPDATE variacoes SET quantidade_estoque = $1 WHERE id = $2`, [quantidade, id]);
-        await initializeInventory(); 
-        io.emit('estado_inicial_estoque', liveInventory);
-        res.json({ message: `Estoque da variação atualizado.` });
-    } catch (err) { res.status(500).json({ "error": err.message }); }
+
+        if (quantidade < 0) {
+            return res.status(400).json({ error: "Quantidade não pode ser negativa." });
+        }
+        
+        const { rows } = await db.query(
+            `UPDATE variacoes SET quantidade_estoque = $1 WHERE id = $2 RETURNING slug`, 
+            [quantidade, id]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: "Variação não encontrada." });
+        }
+
+        const slug = rows[0].slug;
+        
+        // Atualiza o inventário em memória
+        if (liveInventory[slug] !== undefined) {
+            liveInventory[slug] = parseInt(quantidade);
+        }
+
+        // Transmite apenas a mudança específica para todos os clientes
+        io.emit('estoque_atualizado', { [slug]: liveInventory[slug] });
+        
+        res.json({ message: `Estoque da variação ${slug} atualizado.` });
+    } catch (err) {
+        console.error('[ERRO DETALHADO] em /variacao/estoque:', err);
+        res.status(500).json({ "error": err.message });
+    }
 });
 
 app.post('/variacoes', protegerRota, apenasAdmin, async (req, res) => {
