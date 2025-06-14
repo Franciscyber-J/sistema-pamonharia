@@ -424,20 +424,22 @@ app.get('/setores', protegerRota, async (req, res) => {
     }
 });
 
-// *** BUG 1 FIX: Corrigida a query SQL para não duplicar regras de combos ***
 app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
     try {
-        const sql = `
-            SELECT 
-                c.*, 
-                (SELECT COALESCE(json_agg(rc.*), '[]'::json) 
-                 FROM regras_combo rc 
-                 WHERE rc.combo_id = c.id) as regras 
-            FROM combos c 
-            ORDER BY c.id;
-        `;
-        const { rows } = await db.query(sql);
-        res.json({ data: rows });
+        const combosResult = await db.query('SELECT * FROM combos ORDER BY id');
+        const combos = combosResult.rows;
+
+        const regrasResult = await db.query('SELECT * FROM regras_combo');
+        const todasAsRegras = regrasResult.rows;
+
+        const combosComRegras = combos.map(combo => {
+            return {
+                ...combo,
+                regras: todasAsRegras.filter(regra => regra.combo_id === combo.id)
+            };
+        });
+
+        res.json({ data: combosComRegras });
     } catch (err) {
         console.error("[ERRO DETALHADO] em /api/dashboard/combos:", err);
         res.status(500).json({ error: "Erro ao buscar combos para o dashboard." });
@@ -545,7 +547,6 @@ app.delete('/setores/:id', protegerRota, apenasAdmin, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// *** BUG 2 FIX: Rota de estoque refatorada para ser eficiente e emitir atualização parcial ***
 app.post('/variacao/estoque', protegerRota, async (req, res) => {
     try {
         const { id, quantidade } = req.body;
@@ -565,12 +566,10 @@ app.post('/variacao/estoque', protegerRota, async (req, res) => {
 
         const slug = rows[0].slug;
         
-        // Atualiza o inventário em memória
         if (liveInventory[slug] !== undefined) {
             liveInventory[slug] = parseInt(quantidade);
         }
 
-        // Transmite apenas a mudança específica para todos os clientes
         io.emit('estoque_atualizado', { [slug]: liveInventory[slug] });
         
         res.json({ message: `Estoque da variação ${slug} atualizado.` });
@@ -600,7 +599,8 @@ app.put('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/dashboard/variacoes/:id/toggle-stock', protegerRota, apenasAdmin, async (req, res) => {
+// *** MUDANÇA: Middleware 'apenasAdmin' removido para permitir que operadores acessem ***
+app.put('/api/dashboard/variacoes/:id/toggle-stock', protegerRota, async (req, res) => {
     try {
         const { id } = req.params;
         const { controlar_estoque } = req.body;

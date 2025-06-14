@@ -292,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="variacoes-container hidden" id="variacoes-pb-${pb.id}">
                     <table class="variacoes-table">
-                        <thead><tr><th>Variação</th><th>Preço</th><th data-admin-only>Controle de Estoque</th><th>Estoque</th><th>Ações</th></tr></thead>
+                        <thead><tr><th>Variação</th><th>Preço</th><th>Controle de Estoque</th><th>Estoque</th><th data-admin-only>Ações</th></tr></thead>
                         <tbody>${renderizarLinhasVariacoes(pb)}</tbody>
                     </table>
                     <button class="add-btn" data-action="adicionar-variacao" data-id="${pb.id}" data-admin-only>+ Adicionar Nova Variação</button>
@@ -322,11 +322,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 </label>
             `;
             
+            // *** MUDANÇA: Removido o 'data-admin-only' da célula do toggle ***
             return `
                 <tr class="${v.controlar_estoque && v.quantidade_estoque === 0 ? 'variacao-esgotada' : ''}">
                     <td>${v.nome}</td>
                     <td>R$ ${Number(v.preco).toFixed(2).replace('.',',')}</td>
-                    <td data-admin-only>${toggleEstoqueHTML}</td>
+                    <td>${toggleEstoqueHTML}</td>
                     <td>${inputEstoqueHTML}</td>
                     <td class="actions-cell" data-admin-only>
                         <button class="actions-menu-btn" data-action="toggle-actions-menu" data-type="variacao" data-id="${v.id}" data-pb-id="${produtoBase.id}" data-nome="${v.nome}">⋮</button>
@@ -770,7 +771,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // *** CORREÇÃO INICIO: Lógica de eventos para produtos e combos refatorada ***
     function handleAcoesProdutos(e) {
         const target = e.target;
 
@@ -839,7 +839,6 @@ document.addEventListener('DOMContentLoaded', () => {
             abrirModalCombo(id);
         }
     }
-    // *** CORREÇÃO FIM ***
 
     function handleAcoesSetor(e) {
         const target = e.target.closest('button');
