@@ -16,7 +16,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*",
+        origin: "*", // Em produção, restrinja para a URL do seu frontend
         methods: ["GET", "POST"]
     }
 });
@@ -428,7 +428,25 @@ app.get('/api/dashboard/combos', protegerRota, async (req, res) => {
     try {
         const sql = `SELECT c.*, COALESCE(json_agg(rc.*) FILTER (WHERE rc.id IS NOT NULL), '[]'::json) as regras FROM combos c LEFT JOIN regras_combo rc ON rc.combo_id = c.id GROUP BY c.id ORDER BY c.id;`;
         const { rows } = await db.query(sql);
-        res.json({ data: rows });
+
+        // *** CORREÇÃO INICIO: Processamento para remover regras duplicadas ***
+        const combosProcessados = rows.map(combo => {
+            if (combo.regras && combo.regras.length > 0) {
+                const regrasUnicas = [];
+                const idsVistos = new Set();
+                for (const regra of combo.regras) {
+                    if (regra && !idsVistos.has(regra.id)) {
+                        regrasUnicas.push(regra);
+                        idsVistos.add(regra.id);
+                    }
+                }
+                combo.regras = regrasUnicas;
+            }
+            return combo;
+        });
+        // *** CORREÇÃO FIM ***
+
+        res.json({ data: combosProcessados });
     } catch (err) {
         console.error("[ERRO DETALHADO] em /api/dashboard/combos:", err);
         res.status(500).json({ error: "Erro ao buscar combos para o dashboard." });
@@ -548,7 +566,6 @@ app.post('/variacao/estoque', protegerRota, async (req, res) => {
 app.post('/variacoes', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { produto_base_id, nome, slug, preco } = req.body;
-        // Por padrão, novas variações controlam o estoque
         await db.query(`INSERT INTO variacoes (produto_base_id, nome, slug, preco, quantidade_estoque, controlar_estoque) VALUES ($1, $2, $3, $4, 0, true) RETURNING id`, [produto_base_id, nome, slug, preco]);
         await initializeInventory();
         io.emit('cardapio_alterado');
@@ -566,20 +583,18 @@ app.put('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// NOVA ROTA para o toggle de controle de estoque
 app.put('/api/dashboard/variacoes/:id/toggle-stock', protegerRota, apenasAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { controlar_estoque } = req.body;
         await db.query(`UPDATE variacoes SET controlar_estoque = $1 WHERE id = $2`, [controlar_estoque, id]);
         await initializeInventory();
-        io.emit('cardapio_alterado'); // Emite um evento geral para todos os clientes atualizarem
+        io.emit('cardapio_alterado'); 
         res.json({ message: 'Controle de estoque atualizado.' });
     } catch(err) {
         res.status(500).json({ error: 'Falha ao atualizar controle de estoque.' });
     }
 });
-
 
 app.delete('/variacoes/:id', protegerRota, apenasAdmin, async (req, res) => {
     try {

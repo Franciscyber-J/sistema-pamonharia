@@ -96,7 +96,6 @@
         #custom-alert-modal { background: var(--cor-superficie); padding: 25px; border-radius: 10px; width: 90%; max-width: 400px; text-align: center; border: 1px solid var(--cor-borda); }
         #custom-alert-message { margin: 0; margin-bottom: 20px; font-size: 1.1em; line-height: 1.5; }
         #custom-alert-buttons { display: flex; justify-content: center; gap: 15px; }
-        /* CORREÇÃO: Botões maiores no modal de alerta */
         #custom-alert-buttons button { padding: 12px 25px; font-size: 1em; }
         @media (min-width: 992px) { .container { flex-direction: row; align-items: flex-start; gap: 40px; } .menu { flex: 2; } .cart-checkout-container { flex: 1; position: sticky; top: 20px; max-width: 450px; } }
     </style>
@@ -123,7 +122,7 @@
         <div class="checkout-section">
             <h3>Forma de Pagamento</h3>
             <div class="options-grid" id="payment-options">
-                <div class="option-full"><input type="radio" id="cartao" name="forma-pagamento" value="Cartão"><label for="cartao"><span class="payment-label-content">💳 Cartão (Crédito/Débito)</span><div class="card-flags"><img src="/images/visa.png" alt="Visa"><img src="/images/mastercard.png" alt="Mastercard"><img src="/images/elo.png" alt="Elo"><img src="/images/amex.png" alt="American Express"><img src="/images/hipercard.png" alt="Hipercard"></div></label></div>
+                <div class="option-full"><input type="radio" id="cartao" name="forma-pagamento" value="Cartão"><label for="cartao"><span class="payment-label-content">💳 Cartão (Crédito/Débito)</span><div class="card-flags"><img src="/images/visa.png" alt="Visa" onerror="this.style.display='none'"><img src="/images/mastercard.png" alt="Mastercard" onerror="this.style.display='none'"><img src="/images/elo.png" alt="Elo" onerror="this.style.display='none'"><img src="/images/amex.png" alt="American Express" onerror="this.style.display='none'"><img src="/images/hipercard.png" alt="Hipercard" onerror="this.style.display='none'"></div></label></div>
                 <div><input type="radio" id="dinheiro" name="forma-pagamento" value="Dinheiro" checked><label for="dinheiro"><span class="payment-label-content">💵 Dinheiro</span></label></div>
                 <div><input type="radio" id="pix" name="forma-pagamento" value="PIX"><label for="pix"><span class="payment-label-content">💲 PIX</span></label></div>
             </div>
@@ -366,11 +365,11 @@
                 }
                 productCard.className = `product-card ${isEsgotado ? 'produto-esgotado' : ''}`;
                 productCard.innerHTML = `
-                    <img src="${item.imagem_url}" alt="${item.nome}">
+                    <img src="${item.imagem_url}" alt="${item.nome}" onerror="this.src='https://placehold.co/400x200/21262d/8b949e?text=Imagem+Indisponível'">
                     <div class="product-card-content">
                         <div class="product-card-info">
-                           <h3>${item.nome}</h3>
-                           <p>${item.descricao || ''}</p>
+                            <h3>${item.nome}</h3>
+                            <p>${item.descricao || ''}</p>
                         </div>
                         <button class="add-button" onclick="handleProductClick('${item.tipo}', ${item.id})" ${isEsgotado ? 'disabled' : ''}>
                             ${isEsgotado ? 'Esgotado' : (item.tipo === 'combo' ? 'Montar Combo' : 'Escolher Opções')}
@@ -469,11 +468,14 @@
                 const isEsgotado = item.controlar_estoque && estoqueDisponivel === 0;
                 selecaoComboModal.itens[item.slug] = { ...item, quantidade: 0, upcharge: upcharge, estoqueDisponivel: estoqueDisponivel };
                 const upchargeText = upcharge > 0 ? `<div class="item-upcharge">+ R$ ${Number(upcharge).toFixed(2).replace('.',',')}</div>` : '';
+                
+                // *** CORREÇÃO INICIO: Adicionado div de mensagem de estoque ***
                 itemsList.innerHTML += `
                     <div class="combo-item ${isEsgotado ? 'esgotado' : ''}">
                         <div class="combo-item-info">
                             <div class="item-name">${item.produtoBase.nome} (${item.nome})</div>
                             ${upchargeText}
+                            <div class="stock-limit-msg" id="msg-c-${item.slug}">Estoque disponível: ${item.controlar_estoque ? estoqueDisponivel : 'ilimitado'}</div>
                         </div>
                         <div class="quantity-selector">
                             <button class="quantity-btn" onclick="mudarQuantidadeCombo('${item.slug}', -1)">-</button>
@@ -481,6 +483,7 @@
                             <button class="quantity-btn" onclick="mudarQuantidadeCombo('${item.slug}', 1)" ${isEsgotado ? 'disabled' : ''}>+</button>
                         </div>
                     </div>`;
+                // *** CORREÇÃO FIM ***
             });
             atualizarStatusModalCombo();
             document.getElementById('add-combo-button').disabled = false;
@@ -491,15 +494,16 @@
             const item = selecaoComboModal.itens[slug];
             const novoTotal = selecaoComboModal.totalSelecionado + delta;
             const novaQuantidadeItem = item.quantidade + delta;
-
-            const variacaoDetails = productDetails[slug];
-            const estoqueDisponivel = getEstoqueDisponivel(slug);
             
-            if (variacaoDetails.controlar_estoque && novaQuantidadeItem > estoqueDisponivel) {
+            // *** CORREÇÃO INICIO: Lógica para exibir mensagem de estoque ***
+            const estoqueDisponivel = getEstoqueDisponivel(slug);
+            if (item.controlar_estoque && novaQuantidadeItem > estoqueDisponivel) {
                 const msgEl = document.getElementById(`msg-c-${slug}`);
                 if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); }
                 return;
             }
+            // *** CORREÇÃO FIM ***
+
             if (novaQuantidadeItem >= 0 && novoTotal <= selecaoComboModal.combo.quantidade_itens_obrigatoria) {
                 item.quantidade = novaQuantidadeItem;
                 document.getElementById(`combo-qty-${slug}`).innerText = item.quantidade;
@@ -665,7 +669,7 @@
                 mensagem += '🍽️ *ITENS DO PEDIDO*\n';
                 carrinho.forEach(item => {
                     mensagem += `*${item.quantidade}x* ${item.nome}`;
-                    if (item.detalhes) mensagem += `\n  ↳ _(${item.detalhes})_`;
+                    if (item.detalhes) mensagem += `\n ↳ _(${item.detalhes})_`;
                     mensagem += '\n';
                     subtotal += item.preco * item.quantidade;
                 });

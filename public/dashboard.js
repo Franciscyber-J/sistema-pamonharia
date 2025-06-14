@@ -47,14 +47,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         precisaRecarregarGeral = true;
                     }
                 } else {
-                     precisaRecarregarGeral = true;
+                        precisaRecarregarGeral = true;
                 }
             }
 
             if(precisaRecarregarGeral) {
                 carregarTudo();
             } else {
-                 mostrarToast('Estoque atualizado na tela!', 'info');
+                mostrarToast('Estoque atualizado na tela!', 'info');
             }
         });
 
@@ -281,7 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cardDiv.innerHTML = `
                 <div class="produto-header" data-id="${pb.id}">
                     <span class="produto-header-toggle">▶</span>
-                    <img src="${pb.imagem_url}" alt="${pb.nome}" class="produto-header-imagem">
+                    <img src="${pb.imagem_url}" alt="${pb.nome}" class="produto-header-imagem" onerror="this.src='https://placehold.co/100x100/161b22/8b949e?text=S/Foto'">
                     <div class="produto-header-info">
                         <h3>${pb.nome}</h3>
                         <p>Setor: ${pb.setor_nome || 'Não definido'}</p>
@@ -362,7 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cardDiv.dataset.comboId = combo.id;
             cardDiv.innerHTML = `
                 <div class="produto-header" data-id="${combo.id}">
-                     <img src="${combo.imagem_url}" alt="${combo.nome}" class="produto-header-imagem">
+                     <img src="${combo.imagem_url}" alt="${combo.nome}" class="produto-header-imagem" onerror="this.src='https://placehold.co/100x100/161b22/8b949e?text=S/Foto'">
                     <div class="produto-header-info">
                         <h3>${combo.nome} <span class="status-dot ${statusClass}" title="${combo.ativo ? 'Ativo' : 'Inativo'}"></span></h3>
                         <p>Preço Base: R$ ${Number(combo.preco_base).toFixed(2).replace('.',',')}</p>
@@ -633,7 +633,6 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault(); 
         const id = document.getElementById('v-id').value;
         const nomeVariacao = document.getElementById('v-nome').value;
-        // A lógica do checkbox será tratada por um evento separado
         const data = { 
             produto_base_id: document.getElementById('v-pb-id').value, 
             nome: nomeVariacao, 
@@ -725,47 +724,83 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function toggleStockControl(id, isChecked) {
+        const checkbox = document.querySelector(`input[data-action="toggle-stock-control"][data-id="${id}"]`);
+        const variacaoRow = checkbox.closest('tr');
+        const stockControlsContainer = variacaoRow.querySelector('.stock-controls');
+
+        const applyUIState = (shouldBeEnabled) => {
+            if (stockControlsContainer) {
+                stockControlsContainer.style.opacity = shouldBeEnabled ? '1' : '0.5';
+                stockControlsContainer.style.pointerEvents = shouldBeEnabled ? 'auto' : 'none';
+                stockControlsContainer.querySelectorAll('input, button').forEach(el => el.disabled = !shouldBeEnabled);
+            }
+        };
+        
+        applyUIState(isChecked);
+
+        for (const pb of cache.produtos) {
+            const variacao = pb.variacoes.find(v => v.id == id);
+            if (variacao) {
+                variacao.controlar_estoque = isChecked;
+                break;
+            }
+        }
+
         try {
-            await fetchProtegido(`${backendUrl}/api/dashboard/variacoes/${id}/toggle-stock`, {
+            const response = await fetchProtegido(`${backendUrl}/api/dashboard/variacoes/${id}/toggle-stock`, {
                 method: 'PUT',
                 body: JSON.stringify({ controlar_estoque: isChecked })
             });
+            if (!response.ok) throw new Error((await response.json()).error || 'Erro do servidor');
+            
             mostrarToast('Controle de estoque atualizado!', 'sucesso');
-            // A atualização visual será tratada pelo evento de socket para manter consistência
         } catch (error) {
-            mostrarToast(`Erro: ${error.message}`, 'erro');
-            // Reverte o checkbox em caso de erro
-            const checkbox = document.querySelector(`input[data-action="toggle-stock-control"][data-id="${id}"]`);
-            if(checkbox) checkbox.checked = !isChecked;
+            mostrarToast(`Erro ao salvar: ${error.message}`, 'erro');
+            
+            if (checkbox) checkbox.checked = !isChecked;
+            applyUIState(!isChecked);
+
+            for (const pb of cache.produtos) {
+                const variacao = pb.variacoes.find(v => v.id == id);
+                if (variacao) {
+                    variacao.controlar_estoque = !isChecked;
+                    break;
+                }
+            }
         }
     }
 
+    // *** CORREÇÃO INICIO: Lógica de eventos para produtos e combos refatorada ***
     function handleAcoesProdutos(e) {
         const target = e.target;
-        const button = target.closest('button');
-        const header = target.closest('.produto-header');
-        const action = button ? button.dataset.action : (header && !target.closest('.actions-cell') && !target.closest('.produto-header-toggle') ? 'toggle-variacoes' : null);
 
         if (target.dataset.action === 'toggle-stock-control') {
             toggleStockControl(target.dataset.id, target.checked);
             return;
         }
-        
-        if (target.matches('.produto-header-toggle')) {
+
+        const header = target.closest('.produto-header');
+        if (header) {
+            if (target.closest('.actions-menu-btn')) {
+                abrirMenuAcoes(target.closest('.actions-menu-btn'));
+                return;
+            }
+            
             const id = header.dataset.id;
             const container = document.getElementById(`variacoes-pb-${id}`);
-            const toggleIcon = target;
+            const toggleIcon = header.querySelector('.produto-header-toggle');
             container.classList.toggle('hidden');
             toggleIcon.style.transform = container.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(90deg)';
             return;
         }
-        
-        if (!action) return;
-        if (action === 'toggle-actions-menu') {
-            abrirMenuAcoes(button); return;
-        }
-        if(action !== 'toggle-variacoes') { fecharMenuAcoes(); }
-        const id = parseInt(button?.dataset.id || header?.dataset.id);
+
+        const button = target.closest('button');
+        if (!button || !button.dataset.action) return;
+
+        fecharMenuAcoes();
+
+        const action = button.dataset.action;
+        const id = parseInt(button.dataset.id);
         const allActions = {
             'adicionar-variacao': () => abrirModalVariacao(null, id),
             'salvar-estoque': async () => {
@@ -784,21 +819,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (input) input.value = parseInt(input.value) + 1;
             },
         };
-        if (allActions[action]) allActions[action]();
+
+        if (allActions[action]) {
+            allActions[action]();
+        }
     }
     
     function handleAcoesCombos(e) {
         const target = e.target;
-        const button = target.closest('button');
         const header = target.closest('.produto-header');
-        
-        if (button && button.dataset.action === 'toggle-actions-menu') {
-            abrirMenuAcoes(button);
-        } else if (header) {
+
+        if (header) {
+            if (target.closest('.actions-menu-btn')) {
+                abrirMenuAcoes(target.closest('.actions-menu-btn'));
+                return;
+            }
+            
             const id = parseInt(header.dataset.id);
             abrirModalCombo(id);
         }
     }
+    // *** CORREÇÃO FIM ***
 
     function handleAcoesSetor(e) {
         const target = e.target.closest('button');
