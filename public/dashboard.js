@@ -26,23 +26,15 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Dashboard conectado ao servidor em tempo real!');
         });
 
-        socket.on('estado_inicial_estoque', (estoqueInicial) => {
-            console.log('Recebido estado inicial do estoque. Recarregando dados...');
+        socket.on('estado_inicial_estoque', () => {
+            console.log('Recebida atualização de estoque completa. Recarregando dados...');
             mostrarToast('Estoque sincronizado.', 'info');
-            cache.produtos.forEach(p => {
-                p.variacoes.forEach(v => {
-                    if(estoqueInicial[v.slug] !== undefined) {
-                        v.quantidade_estoque = estoqueInicial[v.slug];
-                    }
-                });
-            });
-            renderizarGerenciadorProdutos();
+            carregarTudo();
         });
 
         socket.on('estoque_atualizado', (estoques) => {
             console.log('Recebida atualização de estoque em tempo real:', estoques);
-            let precisaRecarregarGeral = false;
-
+            let precisaRecarregar = false;
             for (const slug in estoques) {
                 const variacao = cache.produtos.flatMap(p => p.variacoes).find(v => v.slug === slug);
                 if (variacao) {
@@ -51,14 +43,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (inputEstoque) {
                         inputEstoque.value = estoques[slug]; // Atualiza apenas o campo na tela
                     } else {
-                        precisaRecarregarGeral = true; // Se o campo não está visível, talvez precise recarregar
+                        precisaRecarregar = true; 
                     }
                 } else {
-                     precisaRecarregarGeral = true;
+                     precisaRecarregar = true;
                 }
             }
-
-            if(precisaRecarregarGeral) {
+            if(precisaRecarregar) {
                 carregarTudo(); // Recarrega tudo como fallback
             } else {
                  mostrarToast('Estoque atualizado na tela!', 'info');
@@ -313,23 +304,29 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!produtoBase.variacoes || produtoBase.variacoes.length === 0) {
             return '<tr><td colspan="4" style="text-align:center; padding: 20px;">Nenhuma variação cadastrada.</td></tr>';
         }
-        return produtoBase.variacoes.map(v => `
-            <tr class="${v.quantidade_estoque === 0 ? 'variacao-esgotada' : ''}">
-                <td>${v.nome}</td>
-                <td>R$ ${Number(v.preco).toFixed(2).replace('.',',')}</td>
-                <td>
-                    <div class="stock-controls">
-                        <button class="stock-btn" data-action="stock-minus" data-id="${v.id}">-</button>
-                        <input type="number" value="${v.quantidade_estoque}" id="estoque-v-${v.id}" min="0">
-                        <button class="stock-btn" data-action="stock-plus" data-id="${v.id}">+</button>
-                        <button class="save-btn btn-sm" data-action="salvar-estoque" data-id="${v.id}">Salvar</button>
-                    </div>
-                </td>
-                <td class="actions-cell" data-admin-only>
-                    <button class="actions-menu-btn" data-action="toggle-actions-menu" data-type="variacao" data-id="${v.id}" data-pb-id="${produtoBase.id}" data-nome="${v.nome}">⋮</button>
-                </td>
-            </tr>
-        `).join('');
+        return produtoBase.variacoes.map(v => {
+            // Se controlar_estoque for false, o texto é "Sob Demanda", caso contrário, mostra a quantidade
+            const textoEstoque = v.controlar_estoque ? v.quantidade_estoque : 'Sob Demanda';
+            const inputEstoqueHTML = `
+                <div class="stock-controls" style="${!v.controlar_estoque ? 'opacity: 0.5; pointer-events: none;' : ''}">
+                    <button class="stock-btn" data-action="stock-minus" data-id="${v.id}" ${!v.controlar_estoque ? 'disabled' : ''}>-</button>
+                    <input type="number" value="${v.quantidade_estoque}" id="estoque-v-${v.id}" min="0" ${!v.controlar_estoque ? 'disabled' : ''}>
+                    <button class="stock-btn" data-action="stock-plus" data-id="${v.id}" ${!v.controlar_estoque ? 'disabled' : ''}>+</button>
+                    <button class="save-btn btn-sm" data-action="salvar-estoque" data-id="${v.id}" ${!v.controlar_estoque ? 'disabled' : ''}>Salvar</button>
+                </div>
+            `;
+            
+            return `
+                <tr class="${v.quantidade_estoque === 0 && v.controlar_estoque ? 'variacao-esgotada' : ''}">
+                    <td>${v.nome}</td>
+                    <td>R$ ${Number(v.preco).toFixed(2).replace('.',',')}</td>
+                    <td>${v.controlar_estoque ? inputEstoqueHTML : '<span>Sob Demanda</span>'}</td>
+                    <td class="actions-cell" data-admin-only>
+                        <button class="actions-menu-btn" data-action="toggle-actions-menu" data-type="variacao" data-id="${v.id}" data-pb-id="${produtoBase.id}" data-nome="${v.nome}">⋮</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
     }
     
     function renderizarGerenciadorSetores() {
@@ -551,11 +548,14 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('modal-produto-base').style.display = 'flex';
     }
 
+    // ATUALIZADO: Lógica para popular e interagir com o controle de estoque
     function abrirModalVariacao(id = null, produtoBaseId) {
         const form = document.getElementById('form-variacao');
         form.reset();
         document.getElementById('v-id').value = '';
         document.getElementById('v-pb-id').value = produtoBaseId;
+        const checkboxEstoque = document.getElementById('v-controlar-estoque');
+        
         if (id) {
             const pb = cache.produtos.find(p => p.id === produtoBaseId);
             const variacao = pb.variacoes.find(v => v.id === id);
@@ -563,42 +563,14 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('v-id').value = variacao.id;
             document.getElementById('v-nome').value = variacao.nome;
             document.getElementById('v-preco').value = variacao.preco;
+            checkboxEstoque.checked = variacao.controlar_estoque;
         } else {
             const pb = cache.produtos.find(p => p.id === produtoBaseId);
             document.getElementById('form-v-title').innerText = `Adicionar Variação para: ${pb.nome}`;
+            checkboxEstoque.checked = true; // Padrão é controlar estoque
         }
+
         document.getElementById('modal-variacao').style.display = 'flex';
-    }
-
-    function abrirModalCombo(id = null) {
-        regrasTemporarias = [];
-        const form = document.getElementById('form-combo');
-        form.reset();
-        document.getElementById('combo-id').value = '';
-        
-        const setorSelect = document.getElementById('regra-setor-alvo');
-        const produtoSelect = document.getElementById('regra-produto-alvo');
-        setorSelect.innerHTML = cache.setores.map(s => `<option value="${s.id}">${s.nome}</option>`).join('');
-        produtoSelect.innerHTML = cache.produtos.map(p => `<option value="${p.id}">${p.nome}</option>`).join('');
-
-        if (id) {
-            const combo = cache.combos.find(c => c.id === id);
-            document.getElementById('form-combo-title').innerText = 'Editando Combo';
-            document.getElementById('combo-id').value = combo.id;
-            document.getElementById('combo-nome').value = combo.nome;
-            document.getElementById('combo-descricao').value = combo.descricao;
-            document.getElementById('combo-preco').value = combo.preco_base;
-            document.getElementById('combo-qtd-itens').value = combo.quantidade_itens_obrigatoria;
-            document.getElementById('combo-ativo').value = String(combo.ativo);
-            regrasTemporarias = combo.regras ? JSON.parse(JSON.stringify(combo.regras)) : [];
-        } else {
-            document.getElementById('form-combo-title').innerText = 'Criar Novo Combo';
-            regrasTemporarias = [];
-        }
-
-        renderizarRegrasCombo();
-        toggleRegraInputs();
-        document.getElementById('modal-combo').style.display = 'flex';
     }
 
     async function handleFormProdutoSubmit(e) {
@@ -632,6 +604,7 @@ document.addEventListener('DOMContentLoaded', () => {
             produto_base_id: document.getElementById('v-pb-id').value, 
             nome: nomeVariacao, 
             preco: document.getElementById('v-preco').value, 
+            controlar_estoque: document.getElementById('v-controlar-estoque').checked,
             slug: gerarSlug(nomeVariacao) + '-' + Date.now()
         };
         const method = id ? 'PUT' : 'POST'; 

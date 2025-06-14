@@ -102,8 +102,12 @@ button { padding: 10px 18px; border: 1px solid; border-radius: 6px; cursor: poin
 .modal-close-button { background: none; border: none; font-size: 2rem; color: var(--cor-texto-secundario); cursor: pointer; line-height: 1; padding: 0 5px; }
 .modal-close-button:hover { color: var(--cor-texto-principal); }
 .modal form { overflow-y: auto; padding-right: 15px; }
-/* CORREÇÃO: Adiciona margem entre os botões de regras e de salvar no modal de combos */
-.modal .add-regra-form { margin-bottom: 25px; }
+.modal .add-regra-form { margin-top: 20px; margin-bottom: 25px; }
+
+.form-group-inline { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+.form-group-inline input[type="checkbox"] { width: auto; margin: 0; }
+.form-group-inline label { margin: 0; color: var(--cor-texto-principal); font-weight: normal; }
+
 
 #toast-notification { position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%); padding: 15px 25px; border-radius: 8px; color: white; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3); opacity: 0; visibility: hidden; transition: all 0.5s; z-index: 2000; }
 #toast-notification.show { opacity: 1; visibility: visible; bottom: 30px; }

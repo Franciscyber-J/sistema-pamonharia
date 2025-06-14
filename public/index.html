@@ -162,6 +162,7 @@
         let selecaoModal = { produtoBaseId: null, variacoes: {} };
         let selecaoComboModal = { combo: null, itens: {}, totalSelecionado: 0 };
         let liveInventory = {};
+        let productDetails = {}; // CORREÇÃO: Declarada a variável que faltava
         const socket = io(backendUrl, { transports: ['websocket'] });
         let lojaEstaAberta = false;
         let mensagemLojaFechada = 'A loja está fechada no momento.';
@@ -206,10 +207,12 @@
         }
         
         socket.on('connect', () => console.log('Conectado ao servidor em tempo real!', socket.id));
+        
         socket.on('estado_inicial_estoque', (inventarioInicial) => {
             liveInventory = inventarioInicial;
             carregarDadosEstaticos();
         });
+
         socket.on('estoque_atualizado', (estoques) => {
             Object.assign(liveInventory, estoques);
             renderizarCardapio();
@@ -222,7 +225,9 @@
                 abrirModalCombo(selecaoComboModal.combo.id);
             }
         });
+
         socket.on('cardapio_alterado', () => carregarDadosEstaticos());
+
         socket.on('force_cart_reset', () => {
             if (carrinho.length > 0) {
                 showCustomAlert('Seu carrinho expirou por inatividade e foi esvaziado para liberar os itens para outros clientes.');
@@ -230,10 +235,12 @@
                 atualizarDisplayCarrinho();
             }
         });
+
         socket.on('carrinho_atualizado', (carrinhoDoServidor) => {
             carrinho = carrinhoDoServidor;
             atualizarDisplayCarrinho();
         });
+
         socket.on('falha_adicionar_item', (data) => {
             showCustomAlert(`Desculpe, não foi possível adicionar o item "${data.nome}". Estoque disponível: ${data.estoque_disponivel}.`);
         });
@@ -258,6 +265,19 @@
                 
                 produtosCache = (await produtosRes.json()).data;
                 combosCache = (await combosRes.json()).data;
+                
+                // CORREÇÃO: Populando o objeto productDetails
+                productDetails = {};
+                produtosCache.forEach(p => {
+                    (p.variacoes || []).forEach(v => {
+                        productDetails[v.slug] = {
+                            id: v.id,
+                            nome: `${p.nome} ${v.nome}`.trim(),
+                            preco: v.preco,
+                            controlar_estoque: v.controlar_estoque
+                        };
+                    });
+                });
                 
                 renderizarCardapio();
             } catch (error) {
@@ -335,7 +355,13 @@
                 if (item.tipo === 'combo') {
                     isEsgotado = verificarEstoqueCombo(item);
                 } else {
-                    isEsgotado = (item.variacoes || []).reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0) === 0;
+                    isEsgotado = (item.variacoes || []).reduce((acc, v) => {
+                        const variacaoDetails = productDetails[v.slug];
+                        if (variacaoDetails && variacaoDetails.controlar_estoque) {
+                            return acc + getEstoqueDisponivel(v.slug);
+                        }
+                        return acc + Infinity;
+                    }, 0) === 0;
                 }
                 productCard.className = `product-card ${isEsgotado ? 'produto-esgotado' : ''}`;
                 productCard.innerHTML = `
@@ -366,12 +392,12 @@
             variationsList.innerHTML = '';
             produto.variacoes.forEach(v => {
                 const estoqueDisponivel = getEstoqueDisponivel(v.slug);
-                const isEsgotado = estoqueDisponivel === 0;
+                const isEsgotado = v.controlar_estoque && estoqueDisponivel === 0;
                 variationsList.innerHTML += `
                     <div class="variation-item ${isEsgotado ? 'esgotado' : ''}">
                         <div class="variation-item-info">
                             <span>${v.nome} (R$ ${Number(v.preco).toFixed(2).replace('.',',')})</span>
-                            <div class="stock-limit-msg" id="msg-v-${v.slug}">Estoque disponível: ${estoqueDisponivel}</div>
+                            <div class="stock-limit-msg" id="msg-v-${v.slug}">Estoque disponível: ${v.controlar_estoque ? estoqueDisponivel : 'ilimitado'}</div>
                         </div>
                         <div class="quantity-selector">
                             <button class="quantity-btn" onclick="mudarQuantidadeModal('${v.slug}', -1)">-</button>
@@ -388,10 +414,12 @@
         function mudarQuantidadeModal(slug, delta) {
             const variacao = selecaoModal.variacoes[slug];
             if (!variacao) return;
+
+            const variacaoDetails = productDetails[slug];
             const estoqueDisponivel = getEstoqueDisponivel(slug);
             const novaQuantidade = variacao.quantidade + delta;
-
-            if (novaQuantidade > estoqueDisponivel) {
+            
+            if (variacaoDetails.controlar_estoque && novaQuantidade > estoqueDisponivel) {
                 const msgEl = document.getElementById(`msg-v-${slug}`);
                 if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); }
                 return;
@@ -418,7 +446,10 @@
 
         function verificarEstoqueCombo(combo) {
             const itensElegiveis = produtosCache.flatMap(p => combo.regras.some(r => r.setor_id_alvo === p.setor_id || r.produto_base_id_alvo === p.id) ? p.variacoes : []).filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
-            const estoqueTotalDisponivel = itensElegiveis.reduce((acc, v) => acc + getEstoqueDisponivel(v.slug), 0);
+            const estoqueTotalDisponivel = itensElegiveis.reduce((acc, v) => {
+                const details = productDetails[v.slug];
+                return acc + (details.controlar_estoque ? getEstoqueDisponivel(v.slug) : Infinity);
+            }, 0);
             return estoqueTotalDisponivel < combo.quantidade_itens_obrigatoria;
         }
 
@@ -435,9 +466,9 @@
                 const regraEspecifica = combo.regras.find(r => r.produto_base_id_alvo === item.produtoBase.id);
                 const upcharge = regraEspecifica ? regraEspecifica.upcharge : 0;
                 const estoqueDisponivel = getEstoqueDisponivel(item.slug);
+                const isEsgotado = item.controlar_estoque && estoqueDisponivel === 0;
                 selecaoComboModal.itens[item.slug] = { ...item, quantidade: 0, upcharge: upcharge, estoqueDisponivel: estoqueDisponivel };
                 const upchargeText = upcharge > 0 ? `<div class="item-upcharge">+ R$ ${Number(upcharge).toFixed(2).replace('.',',')}</div>` : '';
-                const isEsgotado = estoqueDisponivel === 0;
                 itemsList.innerHTML += `
                     <div class="combo-item ${isEsgotado ? 'esgotado' : ''}">
                         <div class="combo-item-info">
@@ -460,7 +491,11 @@
             const item = selecaoComboModal.itens[slug];
             const novoTotal = selecaoComboModal.totalSelecionado + delta;
             const novaQuantidadeItem = item.quantidade + delta;
-            if (delta > 0 && novaQuantidadeItem > item.estoqueDisponivel) {
+
+            const variacaoDetails = productDetails[slug];
+            const estoqueDisponivel = getEstoqueDisponivel(slug);
+            
+            if (variacaoDetails.controlar_estoque && novaQuantidadeItem > estoqueDisponivel) {
                 const msgEl = document.getElementById(`msg-c-${slug}`);
                 if (msgEl) { msgEl.classList.add('visible'); setTimeout(() => msgEl.classList.remove('visible'), 2500); }
                 return;
@@ -484,7 +519,7 @@
             selecaoComboModal.upcharge = upcharge;
             const totalObrigatorio = selecaoComboModal.combo.quantidade_itens_obrigatoria;
             const statusEl = document.getElementById('combo-status');
-            statusEl.innerText = `Selecione ${totalObrigatorio} itens (${totalSelecionado} / ${totalSelecionado})`;
+            statusEl.innerText = `Selecione ${totalObrigatorio} itens (${totalSelecionado} / ${totalObrigatorio})`;
             const addButton = document.getElementById('add-combo-button');
             addButton.disabled = totalSelecionado !== totalObrigatorio;
             statusEl.style.color = totalSelecionado === totalObrigatorio ? 'var(--cor-sucesso)' : 'var(--cor-principal)';
@@ -617,7 +652,7 @@
             try {
                 const response = await fetch(`${backendUrl}/pedido`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', },
                     body: JSON.stringify({ itens: itensDoPedido })
                 });
                 const result = await response.json();
