@@ -1,4 +1,4 @@
-# fly.toml (Versão final com CPU performance)
+# fly.toml (Versão final com CPU performance e 2GB de RAM)
 
 app = "pamonharia-saborosa-bot"
 primary_region = "gru"
@@ -10,8 +10,8 @@ primary_region = "gru"
   source = "wwebjs_auth_data"
   destination = "/data/wwebjs_auth"
 
-# ATUALIZADO: Pedindo uma máquina com CPU dedicada
+# ATUALIZADO: Alocando os 2GB de RAM exigidos pela plataforma
 [[vm]]
   cpu_kind = "performance"
   cpus = 1
-  memory_mb = 1024
+  memory_mb = 2048
