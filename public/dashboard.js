@@ -26,33 +26,32 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Dashboard conectado ao servidor em tempo real!');
         });
 
-        socket.on('estado_inicial_estoque', () => {
-            console.log('Recebida atualização de estoque completa. Recarregando dados...');
-            mostrarToast('Estoque sincronizado.', 'info');
-            carregarTudo();
+        socket.on('estado_inicial_estoque', (estoqueInicial) => {
+            console.log('Recebido estado inicial do estoque. Sincronizando UI...');
+            Object.keys(estoqueInicial).forEach(slug => {
+                const variacao = cache.produtos.flatMap(p => p.variacoes).find(v => v.slug === slug);
+                if (variacao) {
+                    variacao.quantidade_estoque = estoqueInicial[slug];
+                    const inputEstoque = document.getElementById(`estoque-v-${variacao.id}`);
+                    if (inputEstoque) {
+                        inputEstoque.value = estoqueInicial[slug];
+                    }
+                }
+            });
         });
-
+        
         socket.on('estoque_atualizado', (estoques) => {
             console.log('Recebida atualização de estoque em tempo real:', estoques);
-            let precisaRecarregar = false;
+            mostrarToast('Estoque atualizado!', 'info');
             for (const slug in estoques) {
                 const variacao = cache.produtos.flatMap(p => p.variacoes).find(v => v.slug === slug);
                 if (variacao) {
-                    variacao.quantidade_estoque = estoques[slug]; // Atualiza o cache local
+                    variacao.quantidade_estoque = estoques[slug];
                     const inputEstoque = document.getElementById(`estoque-v-${variacao.id}`);
                     if (inputEstoque) {
-                        inputEstoque.value = estoques[slug]; // Atualiza apenas o campo na tela
-                    } else {
-                        precisaRecarregar = true; 
+                        inputEstoque.value = estoques[slug];
                     }
-                } else {
-                     precisaRecarregar = true;
                 }
-            }
-            if(precisaRecarregar) {
-                carregarTudo(); // Recarrega tudo como fallback
-            } else {
-                 mostrarToast('Estoque atualizado na tela!', 'info');
             }
         });
 
@@ -108,7 +107,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- LÓGICA DE CARREGAMENTO DE DADOS ---
     async function carregarTudo() {
         try {
             const acordeoesAbertos = new Set();
@@ -159,7 +157,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- LÓGICA DE AUTENTICAÇÃO E SESSÃO ---
     async function handleLogin(event) {
         event.preventDefault();
         document.getElementById('login-error').textContent = '';
@@ -268,7 +265,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return response;
     }
     
-    // --- LÓGICA DE RENDERIZAÇÃO ---
     function renderizarGerenciadorProdutos() {
         if(!gerenciadorProdutos) return;
         gerenciadorProdutos.innerHTML = ''; 
@@ -305,8 +301,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return '<tr><td colspan="4" style="text-align:center; padding: 20px;">Nenhuma variação cadastrada.</td></tr>';
         }
         return produtoBase.variacoes.map(v => {
-            // Se controlar_estoque for false, o texto é "Sob Demanda", caso contrário, mostra a quantidade
-            const textoEstoque = v.controlar_estoque ? v.quantidade_estoque : 'Sob Demanda';
             const inputEstoqueHTML = `
                 <div class="stock-controls" style="${!v.controlar_estoque ? 'opacity: 0.5; pointer-events: none;' : ''}">
                     <button class="stock-btn" data-action="stock-minus" data-id="${v.id}" ${!v.controlar_estoque ? 'disabled' : ''}>-</button>
@@ -315,9 +309,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button class="save-btn btn-sm" data-action="salvar-estoque" data-id="${v.id}" ${!v.controlar_estoque ? 'disabled' : ''}>Salvar</button>
                 </div>
             `;
-            
             return `
-                <tr class="${v.quantidade_estoque === 0 && v.controlar_estoque ? 'variacao-esgotada' : ''}">
+                <tr class="${v.controlar_estoque && v.quantidade_estoque === 0 ? 'variacao-esgotada' : ''}">
                     <td>${v.nome}</td>
                     <td>R$ ${Number(v.preco).toFixed(2).replace('.',',')}</td>
                     <td>${v.controlar_estoque ? inputEstoqueHTML : '<span>Sob Demanda</span>'}</td>
@@ -354,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cardDiv.className = 'produto-card';
             cardDiv.dataset.comboId = combo.id;
             cardDiv.innerHTML = `
-                <div class="produto-header" data-id="${combo.id}" data-action="editar-combo">
+                <div class="produto-header" data-id="${combo.id}">
                      <img src="${combo.imagem_url}" alt="${combo.nome}" class="produto-header-imagem">
                     <div class="produto-header-info">
                         <h3>${combo.nome} <span class="status-dot ${statusClass}" title="${combo.ativo ? 'Ativo' : 'Inativo'}"></span></h3>
@@ -548,7 +541,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('modal-produto-base').style.display = 'flex';
     }
 
-    // ATUALIZADO: Lógica para popular e interagir com o controle de estoque
     function abrirModalVariacao(id = null, produtoBaseId) {
         const form = document.getElementById('form-variacao');
         form.reset();
@@ -567,10 +559,40 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             const pb = cache.produtos.find(p => p.id === produtoBaseId);
             document.getElementById('form-v-title').innerText = `Adicionar Variação para: ${pb.nome}`;
-            checkboxEstoque.checked = true; // Padrão é controlar estoque
+            checkboxEstoque.checked = true;
+        }
+        document.getElementById('modal-variacao').style.display = 'flex';
+    }
+
+    function abrirModalCombo(id = null) {
+        regrasTemporarias = [];
+        const form = document.getElementById('form-combo');
+        form.reset();
+        document.getElementById('combo-id').value = '';
+        
+        const setorSelect = document.getElementById('regra-setor-alvo');
+        const produtoSelect = document.getElementById('regra-produto-alvo');
+        setorSelect.innerHTML = cache.setores.map(s => `<option value="${s.id}">${s.nome}</option>`).join('');
+        produtoSelect.innerHTML = cache.produtos.map(p => `<option value="${p.id}">${p.nome}</option>`).join('');
+
+        if (id) {
+            const combo = cache.combos.find(c => c.id === id);
+            document.getElementById('form-combo-title').innerText = 'Editando Combo';
+            document.getElementById('combo-id').value = combo.id;
+            document.getElementById('combo-nome').value = combo.nome;
+            document.getElementById('combo-descricao').value = combo.descricao;
+            document.getElementById('combo-preco').value = combo.preco_base;
+            document.getElementById('combo-qtd-itens').value = combo.quantidade_itens_obrigatoria;
+            document.getElementById('combo-ativo').value = String(combo.ativo);
+            regrasTemporarias = combo.regras ? JSON.parse(JSON.stringify(combo.regras)) : [];
+        } else {
+            document.getElementById('form-combo-title').innerText = 'Criar Novo Combo';
+            regrasTemporarias = [];
         }
 
-        document.getElementById('modal-variacao').style.display = 'flex';
+        renderizarRegrasCombo();
+        toggleRegraInputs();
+        document.getElementById('modal-combo').style.display = 'flex';
     }
 
     async function handleFormProdutoSubmit(e) {
@@ -735,8 +757,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!button && !header) return;
         const id = parseInt(button?.dataset.id || header?.dataset.id);
         let action = button?.dataset.action;
-        if (!action && header && !e.target.closest('.actions-cell')) { action = 'editar-combo'; }
+        if (!action && header && !e.target.closest('.actions-cell')) {
+            action = 'editar-combo';
+        }
         if (!action) return;
+        
         if (action === 'toggle-actions-menu') {
             abrirMenuAcoes(button);
         } else if (action === 'editar-combo') {
