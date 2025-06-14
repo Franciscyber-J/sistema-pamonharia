@@ -108,7 +108,7 @@ async function initializeInventory() {
     try {
         console.log('Inicializando o inventário e detalhes de produtos...');
         const { rows } = await db.query(`
-            SELECT v.slug, v.quantidade_estoque, v.preco, pb.nome as produto_base_nome, v.nome as variacao_nome
+            SELECT v.id, v.slug, v.quantidade_estoque, v.preco, pb.nome as produto_base_nome, v.nome as variacao_nome
             FROM variacoes v
             JOIN produtos_base pb ON v.produto_base_id = pb.id
         `);
@@ -117,6 +117,7 @@ async function initializeInventory() {
         rows.forEach(item => {
             liveInventory[item.slug] = item.quantidade_estoque;
             productDetails[item.slug] = {
+                id: item.id,
                 nome: `${item.produto_base_nome} ${item.variacao_nome}`.trim(),
                 preco: item.preco
             };
@@ -164,7 +165,7 @@ io.on('connection', (socket) => {
                     existingItem.quantidade += quantidade;
                 } else {
                     userSession.cart.push({
-                        id: `prod-${slug}`,
+                        id: `prod-${details.id}`,
                         slug: slug,
                         nome: details.nome,
                         preco: details.preco,
@@ -535,27 +536,40 @@ app.post('/dashboard/produtos/reordenar', protegerRota, apenasAdmin, async (req,
     }
 });
 
-// ROTA DE PEDIDO ATUALIZADA
 app.post('/pedido', async (req, res) => {
     const { itens } = req.body;
     if (!itens || !Array.isArray(itens) || itens.length === 0) {
         return res.status(400).json({ error: 'Formato de itens inválido.' });
     }
+
     const client = await db.pool.connect();
     try {
         await client.query('BEGIN');
+
+        const itensComProblema = [];
+        for (const item of itens) {
+            if (item.isCombo) continue;
+            const stockCheck = await client.query("SELECT quantidade_estoque FROM variacoes WHERE id = $1 FOR UPDATE", [item.id]);
+            if (stockCheck.rows.length === 0 || stockCheck.rows[0].quantidade_estoque < item.quantidade) {
+                const details = productDetails[item.slug] || { nome: `Item ID ${item.id}` };
+                itensComProblema.push(details.nome);
+            }
+        }
+
+        if (itensComProblema.length > 0) {
+            await client.query('ROLLBACK');
+            const erroMsg = `Estoque insuficiente para: ${itensComProblema.join(', ')}. Por favor, ajuste seu carrinho.`;
+            return res.status(409).json({ error: erroMsg }); 
+        }
+        
         const updates = [];
         for (const item of itens) {
-            if (item.isCombo) continue; // Ignora combos, pois seus sub-itens já foram processados
-            
-            const updateQuery = "UPDATE variacoes SET quantidade_estoque = quantidade_estoque - $1 WHERE id = $2 AND quantidade_estoque >= $1 RETURNING slug, quantidade_estoque";
+            if (item.isCombo) continue;
+            const updateQuery = "UPDATE variacoes SET quantidade_estoque = quantidade_estoque - $1 WHERE id = $2 RETURNING slug, quantidade_estoque";
             const result = await client.query(updateQuery, [item.quantidade, item.id]);
-            if (result.rowCount === 0) {
-                const details = productDetails[item.slug] || { nome: `Item ID ${item.id}` };
-                throw new Error(`Estoque insuficiente para o item: ${details.nome}.`);
-            }
             updates.push(result.rows[0]);
         }
+
         await client.query('COMMIT');
         
         const stockUpdates = {};
@@ -569,12 +583,11 @@ app.post('/pedido', async (req, res) => {
     } catch (err) {
         await client.query('ROLLBACK');
         console.error("Erro na transação de pedido, rollback executado:", err);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: err.message || "Erro interno ao processar o pedido." });
     } finally {
         client.release();
     }
 });
-
 app.post('/api/dashboard/combos', protegerRota, apenasAdmin, upload.single('imagem'), async (req, res) => {
     if (!req.body.dados) return res.status(400).json({ error: "Dados do combo ausentes." });
     const { nome, descricao, preco_base, quantidade_itens_obrigatoria, ativo, regras } = JSON.parse(req.body.dados);
