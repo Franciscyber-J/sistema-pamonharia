@@ -65,8 +65,9 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--c
 .stock-controls { display: flex; align-items: center; gap: 8px; }
 .stock-controls input[type="number"] { width: 60px; text-align: center; margin-bottom: 0; }
 .stock-btn { padding: 0; width: 30px; height: 30px; min-width: 30px; font-size: 20px; line-height: 1; border-radius: 50%; background-color: var(--cor-borda); color: var(--cor-texto-principal); border: none; }
-input[type=number] { -moz-appearance: textfield; appearance: none; }
+/* CORREÇÃO: Esconde as setas padrão do navegador em campos de número */
 input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 button { padding: 10px 18px; border: 1px solid; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background-color 0.2s ease; font-size: 14px; min-width: 100px; text-align: center; }
 .btn-sm { padding: 6px 12px; font-size: 12px; min-width: 80px; }
 .save-btn, .add-btn { background-color: var(--cor-sucesso); color: white; border-color: var(--cor-sucesso); }
@@ -93,7 +94,7 @@ button { padding: 10px 18px; border: 1px solid; border-radius: 6px; cursor: poin
     overflow: hidden;
 }
 #global-actions-menu button { 
-    display: flex; 
+    display: flex;
     justify-content: center;
     width: 100%; 
     text-align: left; 
@@ -113,17 +114,29 @@ button { padding: 10px 18px; border: 1px solid; border-radius: 6px; cursor: poin
 
 #lista-setores { list-style: none; padding: 0; margin-top: 20px; }
 #lista-setores li { border: 1px solid var(--cor-borda); padding: 12px; margin-bottom: 8px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
-#lista-setores .actions-cell { display: flex; gap: 8px; }
+#lista-setores .actions-cell {
+    display: flex;
+    gap: 8px;
+}
 
+/* CORREÇÃO 1 e 2: Modal com altura máxima, scroll e botão de fechar */
 .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 1000; animation: fadeIn 0.3s; }
-.modal { background: var(--cor-container); padding: 30px; border-radius: 10px; width: 90%; max-width: 500px; border: 1px solid var(--cor-borda); }
+.modal { background: var(--cor-container); padding: 30px; border-radius: 10px; width: 90%; border: 1px solid var(--cor-borda); display: flex; flex-direction: column; max-height: 90vh; }
+.modal.small { max-width: 500px; }
 .modal.large { max-width: 800px; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--cor-borda); padding-bottom: 15px; margin-bottom: 15px;}
+.modal-header h2 { margin: 0; font-size: 1.5em; }
+.modal-close-button { background: none; border: none; font-size: 2rem; color: var(--cor-texto-secundario); cursor: pointer; line-height: 1; padding: 0 5px; }
+.modal-close-button:hover { color: var(--cor-texto-principal); }
+.modal form { overflow-y: auto; padding-right: 15px; } /* Adiciona scroll ao formulário se necessário */
+
 #toast-notification { position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%); padding: 15px 25px; border-radius: 8px; color: white; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3); opacity: 0; visibility: hidden; transition: all 0.5s; z-index: 2000; }
 #toast-notification.show { opacity: 1; visibility: visible; bottom: 30px; }
 #toast-notification.sucesso { background-color: var(--cor-sucesso); }
 #toast-notification.erro { background-color: var(--cor-erro); }
+#toast-notification.info { background-color: var(--cor-edicao); }
 
-/* --- NOVOS ESTILOS PARA CONFIGURAÇÕES DA LOJA --- */
+/* --- ESTILOS PARA CONFIGURAÇÕES DA LOJA --- */
 .config-section { border: 1px solid var(--cor-borda); border-radius: 8px; padding: 20px; margin-bottom: 25px; }
 .config-section h3 { margin-top: 0; color: var(--cor-destaque); border-bottom: 1px solid var(--cor-borda); padding-bottom: 10px; margin-bottom: 20px; }
 .manual-override-container { display: flex; align-items: center; justify-content: space-between; background-color: rgba(88, 166, 255, 0.1); padding: 15px; border-radius: 6px; }

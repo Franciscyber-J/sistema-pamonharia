@@ -64,8 +64,11 @@
     </div>
     
     <div id="modal-produto-base" class="modal-backdrop">
-        <div class="modal">
-            <h2 id="form-pb-title">Produto Base</h2>
+        <div class="modal small">
+            <div class="modal-header">
+                <h2 id="form-pb-title">Produto Base</h2>
+                <button type="button" class="modal-close-button btn-modal-cancel">×</button>
+            </div>
             <form id="form-produto-base">
                 <input type="hidden" id="pb-id">
                 <label for="pb-nome">Nome do Produto:</label>
@@ -84,8 +87,11 @@
         </div>
     </div>
     <div id="modal-variacao" class="modal-backdrop">
-        <div class="modal">
-            <h2 id="form-v-title">Variação</h2>
+        <div class="modal small">
+            <div class="modal-header">
+                 <h2 id="form-v-title">Variação</h2>
+                 <button type="button" class="modal-close-button btn-modal-cancel">×</button>
+            </div>
             <form id="form-variacao">
                 <input type="hidden" id="v-id">
                 <input type="hidden" id="v-pb-id" name="produto_base_id">
@@ -103,7 +109,10 @@
 
     <div id="modal-combo" class="modal-backdrop">
         <div class="modal large">
-            <h2 id="form-combo-title">Gerenciar Combo</h2>
+            <div class="modal-header">
+                <h2 id="form-combo-title">Gerenciar Combo</h2>
+                <button type="button" class="modal-close-button btn-modal-cancel">×</button>
+            </div>
             <form id="form-combo">
                 <input type="hidden" id="combo-id">
                 <div class="form-grid">

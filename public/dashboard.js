@@ -32,10 +32,29 @@ document.addEventListener('DOMContentLoaded', () => {
             carregarTudo();
         });
 
-        socket.on('estoque_atualizado', () => {
-            console.log('Recebida atualização de estoque em tempo real. Recarregando produtos...');
-            mostrarToast('Estoque atualizado!', 'info');
-            carregarTudo();
+        // ATUALIZADO: Lógica para atualização de estoque sem recarregar tudo
+        socket.on('estoque_atualizado', (estoques) => {
+            console.log('Recebida atualização de estoque em tempo real:', estoques);
+            let precisaRecarregar = false;
+            for (const slug in estoques) {
+                const variacao = cache.produtos.flatMap(p => p.variacoes).find(v => v.slug === slug);
+                if (variacao) {
+                    variacao.quantidade_estoque = estoques[slug]; // Atualiza o cache local
+                    const inputEstoque = document.getElementById(`estoque-v-${variacao.id}`);
+                    if (inputEstoque) {
+                        inputEstoque.value = estoques[slug]; // Atualiza apenas o campo na tela
+                    } else {
+                        precisaRecarregar = true; // Se o campo não está visível, talvez precise recarregar
+                    }
+                } else {
+                     precisaRecarregar = true;
+                }
+            }
+            if(!precisaRecarregar) {
+                mostrarToast('Estoque atualizado na tela!', 'info');
+            } else {
+                carregarTudo(); // Recarrega tudo como fallback
+            }
         });
 
         socket.on('cardapio_alterado', () => {
@@ -93,6 +112,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- LÓGICA DE CARREGAMENTO DE DADOS ---
     async function carregarTudo() {
         try {
+            // Salva o estado dos acordeões abertos
+            const acordeoesAbertos = new Set();
+            document.querySelectorAll('.variacoes-container:not(.hidden)').forEach(el => {
+                const id = el.id.replace('variacoes-pb-', '');
+                acordeoesAbertos.add(id);
+            });
+
             const [setoresRes, produtosRes, combosRes, configRes] = await Promise.all([
                 fetchProtegido(`${backendUrl}/setores`),
                 fetchProtegido(`${backendUrl}/api/dashboard/produtos`),
@@ -118,6 +144,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
             inicializarDragAndDrop();
             aplicarPermissoes();
+
+            // Restaura o estado dos acordeões abertos
+            acordeoesAbertos.forEach(id => {
+                const container = document.getElementById(`variacoes-pb-${id}`);
+                const header = document.querySelector(`.produto-header[data-id="${id}"]`);
+                if (container && header) {
+                    const toggleIcon = header.querySelector('.produto-header-toggle');
+                    container.classList.remove('hidden');
+                    if(toggleIcon) toggleIcon.style.transform = 'rotate(90deg)';
+                }
+            });
 
         } catch (err) {
             console.error('ERRO CRÍTICO AO CARREGAR O DASHBOARD:', err);
@@ -576,8 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetchProtegido(url, { method, body: formData }); 
             if (!response.ok) throw new Error((await response.json()).error); 
             fecharModais(); 
-            await carregarTudo(); 
-            mostrarToast(`Produto base ${id ? 'atualizado' : 'criado'}!`, 'sucesso'); 
+            // Não precisa mais recarregar tudo, o evento de socket fará isso.
         } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
     }
     
@@ -606,8 +642,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetchProtegido(url, { method, body: JSON.stringify(data) }); 
             if (!response.ok) throw new Error((await response.json()).error); 
             fecharModais(); 
-            await carregarTudo(); 
-            mostrarToast(`Variação ${id ? 'atualizada' : 'criada'}!`, 'sucesso'); 
+            // O evento de socket cuidará da atualização
         } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
     }
 
@@ -622,8 +657,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await fetchProtegido(url, { method, body: JSON.stringify({ nome }) });
             document.getElementById('form-setor').reset();
             document.getElementById('setor-id').value = '';
-            await carregarTudo();
-            mostrarToast(`Setor ${id ? 'atualizado' : 'criado'}!`, 'sucesso');
+            // O evento de socket cuidará da atualização
         } catch(error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
     }
 
@@ -653,8 +687,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetchProtegido(url, { method, body: formData });
             if (!response.ok) throw new Error((await response.json()).error);
             fecharModais();
-            await carregarTudo();
-            mostrarToast(`Combo ${id ? 'atualizado' : 'criado'} com sucesso!`, 'sucesso');
+            // O evento de socket cuidará da atualização
         } catch (error) {
             mostrarToast(`Erro ao salvar combo: ${error.message}`, 'erro');
         }
@@ -662,6 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderizarRegrasCombo() {
         const container = document.getElementById('regras-container');
+        if(!container) return;
         container.innerHTML = '<h4>Regras Atuais:</h4>';
         if (regrasTemporarias.length === 0) {
             container.innerHTML += '<p>Nenhuma regra adicionada.</p>';
@@ -713,7 +747,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const quantidade = input.value;
                 try {
                     await fetchProtegido(`${backendUrl}/variacao/estoque`, { method: 'POST', body: JSON.stringify({ id, quantidade: parseInt(quantidade) }) });
-                    // O evento do socket vai recarregar os dados, então o toast não é mais necessário aqui
                 } catch (error) { mostrarToast(`Erro: ${error.message}`, 'erro'); }
             },
             'stock-minus': () => {

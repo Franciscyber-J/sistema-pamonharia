@@ -27,9 +27,10 @@
         .product-card { background: var(--cor-superficie); border: 1px solid var(--cor-borda); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; transition: filter 0.3s ease, opacity 0.3s ease; }
         .product-card img { width: 100%; height: 180px; object-fit: cover; }
         .product-card-content { padding: 15px; display: flex; flex-direction: column; flex-grow: 1; }
+        .product-card-info { flex-grow: 1; }
         .product-card h3 { margin-top: 0; color: var(--cor-texto-principal); }
-        .product-card p { color: var(--cor-texto-secundario); font-size: 0.9em; flex-grow: 1; min-height: 60px; }
-        .add-button { background-color: var(--cor-principal); color: white; border: none; padding: 12px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; transition: background-color 0.2s; font-size: 16px; flex-grow: 1; margin-top: 15px; }
+        .product-card p { color: var(--cor-texto-secundario); font-size: 0.9em; min-height: 60px; }
+        .add-button { background-color: var(--cor-principal); color: white; border: none; padding: 12px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; transition: background-color 0.2s; font-size: 16px; margin-top: 15px; }
         .add-button:hover { background-color: var(--cor-principal-hover); }
         .add-button:disabled { background-color: #555; color: var(--cor-texto-secundario); cursor: not-allowed; }
         .produto-esgotado { filter: grayscale(1); opacity: 0.7; }
@@ -40,7 +41,7 @@
         .cart-item { list-style: none; padding-bottom: 15px; border-bottom: 1px solid var(--cor-borda); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: nowrap; }
         .cart-item-info { flex-grow: 1; min-width: 0; }
         .cart-item-info .item-name { font-weight: bold; color: var(--cor-texto-principal); }
-        .cart-item-info .item-details { font-size: 0.85em; color: var(--cor-texto-secundario); padding-left: 10px; }
+        .cart-item-info .item-details { font-size: 0.85em; color: var(--cor-texto-secundario); padding-left: 10px; white-space: normal; }
         .cart-item-info .item-price { font-size: 0.9em; color: var(--cor-texto-secundario); }
         .cart-item-controls { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
         .remove-btn { width: 44px; height: 44px; border-radius: 50%; background-color: var(--cor-exclusao); color: white; border: none; font-weight: bold; font-size: 1.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s;}
@@ -68,21 +69,17 @@
         .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--cor-borda); padding-bottom: 15px; margin-bottom: 15px; }
         .modal-close-btn { font-size: 2rem; background: none; border: none; cursor: pointer; color: #888; }
         .modal-body { overflow-y: auto; padding-right: 15px; }
-        .variation-item { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--cor-borda); }
-        .variation-item.esgotado { filter: grayscale(1); opacity: 0.5; }
-        .variation-item-info { flex-grow: 1; }
-        .variation-item-info span { font-size: 1.1em; }
+        .variation-item, .combo-item { display: flex; flex-wrap: nowrap; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--cor-borda); }
+        .variation-item.esgotado, .combo-item.esgotado { filter: grayscale(1); opacity: 0.5; }
+        .variation-item-info, .combo-item-info { flex-grow: 1; }
+        .variation-item-info span, .combo-item-info .item-name { font-size: 1.1em; }
         .quantity-selector { display: flex; align-items: center; gap: 12px; }
         .quantity-btn { width: 44px; height: 44px; border-radius: 50%; font-size: 1.5rem; line-height: 44px; padding: 0; border: 1px solid var(--cor-borda); background: #30363d; color: var(--cor-texto-principal); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s; }
         .quantity-value { font-size: 1.4em; min-width: 30px; text-align: center; }
         .modal-footer { margin-top: 20px; }
         .modal-footer button { width: 100%; padding: 15px; font-size: 1.1em; }
         #combo-status { text-align: center; font-size: 1.2em; font-weight: bold; margin-bottom: 15px; color: var(--cor-principal); }
-        .combo-item { display: flex; flex-wrap: wrap; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--cor-borda); }
-        .combo-item.esgotado { filter: grayscale(1); opacity: 0.5; }
         .combo-item:last-child { border-bottom: none; }
-        .combo-item-info { flex-grow: 1; }
-        .combo-item-info .item-name { font-weight: 500; }
         .combo-item-info .item-upcharge { font-size: 0.8em; color: var(--cor-badge); font-weight: bold; }
         .floating-cart-btn { position: fixed; bottom: 20px; right: 20px; width: 60px; height: 60px; background-color: var(--cor-principal); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 999; text-decoration: none; transition: transform 0.3s ease, opacity 0.3s ease; transform: scale(0); opacity: 0; }
         .floating-cart-btn.visible { transform: scale(1); opacity: 1; }
@@ -344,12 +341,13 @@
                 productCard.innerHTML = `
                     <img src="${item.imagem_url}" alt="${item.nome}">
                     <div class="product-card-content">
-                        <div><h3>${item.nome}</h3><p>${item.descricao || ''}</p></div>
-                        <div class="product-actions">
-                            <button class="add-button" onclick="handleProductClick('${item.tipo}', ${item.id})" ${isEsgotado ? 'disabled' : ''}>
-                                ${isEsgotado ? 'Esgotado' : (item.tipo === 'combo' ? 'Montar Combo' : 'Escolher Opções')}
-                            </button>
+                        <div class="product-card-info">
+                           <h3>${item.nome}</h3>
+                           <p>${item.descricao || ''}</p>
                         </div>
+                        <button class="add-button" onclick="handleProductClick('${item.tipo}', ${item.id})" ${isEsgotado ? 'disabled' : ''}>
+                            ${isEsgotado ? 'Esgotado' : (item.tipo === 'combo' ? 'Montar Combo' : 'Escolher Opções')}
+                        </button>
                     </div>`;
                 productList.appendChild(productCard);
             });
@@ -445,7 +443,6 @@
                         <div class="combo-item-info">
                             <div class="item-name">${item.produtoBase.nome} (${item.nome})</div>
                             ${upchargeText}
-                            <div class="stock-limit-msg" id="msg-c-${item.slug}">Estoque disponível: ${estoqueDisponivel}</div>
                         </div>
                         <div class="quantity-selector">
                             <button class="quantity-btn" onclick="mudarQuantidadeCombo('${item.slug}', -1)">-</button>
@@ -503,18 +500,19 @@
             for(const slug in itens) {
                 if (itens[slug].quantidade > 0) {
                     detalhes.push(`${itens[slug].quantidade}x ${itens[slug].produtoBase.nome} (${itens[slug].nome})`);
-                    subItens.push({ slug: slug, quantidade: itens[slug].quantidade });
+                    subItens.push({ slug: slug, quantidade: itens[slug].quantidade, id: productDetails[slug].id });
                 }
             }
             
             const comboParaAdicionar = {
-                id: `combo-${combo.id}-${Date.now()}`,
-                nome: combo.nome,
-                preco: precoFinal,
-                quantidade: 1,
-                detalhes: detalhes.join(', '),
-                isCombo: true,
-                subItens: subItens
+                comboDetails: {
+                    nome: combo.nome,
+                    preco: precoFinal,
+                    quantidade: 1,
+                    detalhes: detalhes.join(', ')
+                },
+                subItens: subItens,
+                isCombo: true
             };
             socket.emit('adicionar_combo_carrinho', comboParaAdicionar);
             fecharModal();
@@ -582,6 +580,7 @@
             event.preventDefault();
             
             const finalizeButton = document.getElementById('finalize-button');
+            const originalButtonHTML = finalizeButton.innerHTML;
             if (finalizeButton.classList.contains('disabled')) return;
             if (carrinho.length === 0) {
                 return showCustomAlert('Seu carrinho está vazio!');
@@ -602,20 +601,22 @@
             const itensDoPedido = carrinho.flatMap(item => {
                 if (item.isCombo) {
                     return item.subItens.map(sub => ({
-                        id: parseInt(productDetails[sub.slug].id),
-                        quantidade: sub.quantidade
+                        id: sub.id,
+                        quantidade: sub.quantidade,
+                        slug: sub.slug
                     }));
                 }
                 return {
                     id: parseInt(item.id.split('-')[1]),
-                    quantidade: item.quantidade
+                    quantidade: item.quantidade,
+                    slug: item.slug
                 };
             });
 
             try {
                 const response = await fetch(`${backendUrl}/pedido`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ itens: itensDoPedido })
                 });
                 const result = await response.json();
@@ -658,7 +659,7 @@
             } catch (error) {
                 await showCustomAlert(`ERRO:<br><br>${error.message}<br><br>Seu pedido não foi finalizado.`);
                 finalizeButton.classList.remove('disabled');
-                finalizeButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" fill="white"><path d="M0 0h24v24H0z" fill="none"/><path d="M.01 21L23 12 .01 3 0 10l15 2-15 2z"/></svg>Finalizar Pedido`;
+                finalizeButton.innerHTML = originalButtonHTML;
             }
         }
     </script>
